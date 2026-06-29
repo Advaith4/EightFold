@@ -7,6 +7,15 @@ from typing import Any
 class BaseAdapter(ABC):
     """Contract for loading and parsing external source data."""
 
+    @property
+    @abstractmethod
+    def source_type(self) -> str:
+        """Return the adapter source type.
+
+        Returns:
+            Stable source type identifier for the adapter.
+        """
+
     @abstractmethod
     def load(self) -> Any:
         """Load raw data from an external source.

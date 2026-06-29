@@ -6,17 +6,18 @@ from typing import Any
 
 from loguru import logger
 
+from src.config.models import LoggingConfig, LoggingSettings
 from src.exceptions import ConfigurationError
 
 
 class ProjectLogger:
     """Configure console and rotating file logging for the project."""
 
-    def __init__(self, config: dict[str, Any]) -> None:
+    def __init__(self, config: LoggingConfig | dict[str, Any]) -> None:
         """Initialize logger configuration.
 
         Args:
-            config: Logging configuration mapping.
+            config: Typed or mapping-based logging configuration.
         """
         self._config = config
         self._configured = False
@@ -32,14 +33,11 @@ class ProjectLogger:
         Raises:
             ConfigurationError: If required logging configuration is missing.
         """
-        logging_config = self._config.get("logging")
-        if not isinstance(logging_config, dict):
-            raise ConfigurationError("Logging configuration must define 'logging'.")
-
-        level = str(logging_config.get("level", "INFO"))
-        directory = Path(str(logging_config.get("directory", "logs")))
-        file_name = str(logging_config.get("file_name", "application.log"))
-        log_format = str(logging_config.get("format", "{time} | {level} | {message}"))
+        logging_config = self._logging_settings()
+        level = logging_config.level.value
+        directory = Path(logging_config.directory)
+        file_name = logging_config.file_name
+        log_format = logging_config.format
 
         directory.mkdir(parents=True, exist_ok=True)
         logger.remove()
@@ -48,9 +46,9 @@ class ProjectLogger:
             directory / file_name,
             level=level,
             format=log_format,
-            rotation=str(logging_config.get("rotation", "00:00")),
-            retention=str(logging_config.get("retention", "14 days")),
-            compression=str(logging_config.get("compression", "zip")),
+            rotation=logging_config.rotation,
+            retention=logging_config.retention,
+            compression=logging_config.compression,
         )
         self._configured = True
 
@@ -64,4 +62,12 @@ class ProjectLogger:
             self.configure()
         return logger
 
+    def _logging_settings(self) -> LoggingSettings:
+        """Return validated logging settings."""
+        if isinstance(self._config, LoggingConfig):
+            return self._config.logging
 
+        logging_config = self._config.get("logging")
+        if not isinstance(logging_config, dict):
+            raise ConfigurationError("Logging configuration must define 'logging'.")
+        return LoggingConfig.model_validate({"logging": logging_config}).logging

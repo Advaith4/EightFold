@@ -12,11 +12,15 @@ class _RendererSpy:
         self,
         app_config: dict[str, Any],
         pipeline: Any,
+        pipeline_initialized: bool,
         logger_configured: bool,
+        version: str,
     ) -> None:
         self.app_config = app_config
         self.pipeline = pipeline
+        self.pipeline_initialized = pipeline_initialized
         self.logger_configured = logger_configured
+        self.version = version
 
     def render(self) -> None:
         _RendererSpy.rendered = True

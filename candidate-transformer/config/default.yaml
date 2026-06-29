@@ -1,9 +1,10 @@
 application:
   name: "Candidate Intelligence Transformation Engine"
   environment: "local"
-  version: "0.1.0"
 
 pipeline:
+  current_sprint: "Phase 1"
+  status: "Foundation ready"
   stages:
     - initialize
     - ingest
