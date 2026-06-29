@@ -1,0 +1,21 @@
+application:
+  name: "Candidate Intelligence Transformation Engine"
+  environment: "local"
+  version: "0.1.0"
+
+pipeline:
+  stages:
+    - initialize
+    - ingest
+    - map
+    - normalize
+    - group
+    - merge
+    - project
+    - validate
+    - export
+
+paths:
+  inputs: "inputs"
+  outputs: "outputs"
+  logs: "logs"

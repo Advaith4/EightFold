@@ -1,0 +1,53 @@
+[project]
+name = "candidate-transformer"
+version = "0.1.0"
+description = "Engineering foundation for a candidate intelligence transformation engine."
+readme = "README.md"
+requires-python = ">=3.12,<4.0"
+authors = [
+    { name = "Engineering Team", email = "engineering@example.com" }
+]
+dependencies = [
+    "streamlit>=1.36.0,<2.0.0",
+    "pydantic>=2.8.2,<3.0.0",
+    "loguru>=0.7.2,<1.0.0",
+    "pyyaml>=6.0.2,<7.0.0",
+]
+
+[tool.poetry]
+packages = [{ include = "src" }]
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.2.2"
+black = "^24.4.2"
+ruff = "^0.5.0"
+mypy = "^1.10.1"
+
+[build-system]
+requires = ["poetry-core>=1.9.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 88
+target-version = ["py312"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+ignore = []
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+no_implicit_optional = true
+check_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
