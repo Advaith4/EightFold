@@ -290,7 +290,8 @@ class CandidateIntelligenceAgent:
                     ),
                     rule_id="source_precedence_v1",
                     provenance_ids=[
-                        provenance_by_key[(field_path, chosen_index)].provenance_id
+                        provenance_by_key[(field_path, i)].provenance_id
+                        for i in range(len(values))
                     ],
                     created_at=chosen_evidence.record.ingested_at,
                 )
@@ -354,8 +355,8 @@ class CandidateIntelligenceAgent:
             if location_value is not None
             else None
         )
-        experiences = self._build_experiences(raw_records)
-        education = self._build_education(raw_records)
+        experiences, duplicate_experiences = self._build_experiences(raw_records)
+        education, duplicate_education = self._build_education(raw_records)
         skills = self._build_skills(raw_records)
         links = self._build_links(raw_records)
 
@@ -399,7 +400,9 @@ class CandidateIntelligenceAgent:
             contact_info=contact_info,
             location=location,
             experiences=experiences,
+            duplicate_experiences=duplicate_experiences,
             education=education,
+            duplicate_education=duplicate_education,
             skills=skills,
             links=links,
             summary=self._selected_string(selected, "summary"),
@@ -585,10 +588,11 @@ class CandidateIntelligenceAgent:
 
     def _build_education(
         self, raw_records: list[RawCandidateRecord]
-    ) -> list[Education]:
+    ) -> tuple[list[Education], list[Education]]:
         education: list[Education] = []
         for record in raw_records:
-            for raw_item in self._list_or_single_dict(record.payload.get("education")):
+            raw_education = record.payload.get("education")
+            for raw_item in self._list_or_single_dict(raw_education):
                 institution = self._first_string(raw_item, ("institution", "school"))
                 credential = self._first_string(raw_item, ("credential", "degree"))
                 field_of_study = self._first_string(
@@ -615,7 +619,9 @@ class CandidateIntelligenceAgent:
                         field_of_study=field_of_study,
                         start_date=start_date,
                         end_date=end_date,
+                        grade=self._first_string(raw_item, ("gpa", "score")),
                         confidence=self._confidence_for_records([record]),
+                        provenance=[],
                     )
                 )
         return self._deduplicate_education(education)
@@ -626,8 +632,11 @@ class CandidateIntelligenceAgent:
         cleaned = re.sub(r"[^a-z0-9\s]", "", text.casefold())
         return set(cleaned.split())
 
-    def _deduplicate_education(self, raw_education: list[Education]) -> list[Education]:
+    def _deduplicate_education(
+        self, raw_education: list[Education]
+    ) -> tuple[list[Education], list[Education]]:
         unique: list[Education] = []
+        duplicates: list[Education] = []
         for edu in raw_education:
             inst_words = self._normalize_words(edu.institution)
             cred_words = self._normalize_words(edu.credential)
@@ -647,6 +656,8 @@ class CandidateIntelligenceAgent:
 
             if not is_dup:
                 unique.append(edu)
+            else:
+                duplicates.append(edu)
 
         final_unique = []
         for edu in unique:
@@ -657,11 +668,22 @@ class CandidateIntelligenceAgent:
                 edu.start_date or "",
             )
             final_unique.append(edu.model_copy(update={"education_id": new_id}))
-        return final_unique
+
+        final_duplicates = []
+        for edu in duplicates:
+            new_id = self._stable_id(
+                "education",
+                edu.institution or "",
+                edu.credential or "",
+                edu.start_date or "",
+            )
+            final_duplicates.append(edu.model_copy(update={"education_id": new_id}))
+
+        return final_unique, final_duplicates
 
     def _build_experiences(
         self, raw_records: list[RawCandidateRecord]
-    ) -> list[Experience]:
+    ) -> tuple[list[Experience], list[Experience]]:
         experiences: list[Experience] = []
         for record in raw_records:
             raw_experiences = record.payload.get(
@@ -695,8 +717,9 @@ class CandidateIntelligenceAgent:
 
     def _deduplicate_experiences(
         self, raw_experiences: list[Experience]
-    ) -> list[Experience]:
+    ) -> tuple[list[Experience], list[Experience]]:
         unique: list[Experience] = []
+        duplicates: list[Experience] = []
         for exp in raw_experiences:
             org_words = self._normalize_words(exp.organization)
             title_words = self._normalize_words(exp.title)
@@ -720,6 +743,8 @@ class CandidateIntelligenceAgent:
 
             if not is_dup:
                 unique.append(exp)
+            else:
+                duplicates.append(exp)
 
         final_unique = []
         for exp in unique:
@@ -730,7 +755,18 @@ class CandidateIntelligenceAgent:
                 exp.start_date or "",
             )
             final_unique.append(exp.model_copy(update={"experience_id": new_id}))
-        return final_unique
+
+        final_duplicates = []
+        for exp in duplicates:
+            new_id = self._stable_id(
+                "experience",
+                exp.organization or "",
+                exp.title or "",
+                exp.start_date or "",
+            )
+            final_duplicates.append(exp.model_copy(update={"experience_id": new_id}))
+
+        return final_unique, final_duplicates
 
     def _source_label(self, record: RawCandidateRecord) -> str:
         source_type = record.source_type

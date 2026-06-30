@@ -1,0 +1,188 @@
+/* Import Google Font */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* Apply Font Globally */
+html, body, [class*="css"] {
+    font-family: 'Inter', sans-serif !important;
+}
+
+/* Hide Default Streamlit Header */
+[data-testid="stHeader"] {
+    background-color: transparent !important;
+    box-shadow: none !important;
+}
+
+/* Reduce Main Container Top Padding */
+.block-container {
+    padding-top: 2rem !important;
+}
+
+/* Background Animation */
+@keyframes gradientAnimation {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+
+/* App Background (Professional Light Blue Gradient) */
+[data-testid="stAppViewContainer"] {
+    background: linear-gradient(-45deg, #e0f2fe, #bae6fd, #e0f2fe, #dbeafe) !important;
+    background-size: 400% 400% !important;
+    animation: gradientAnimation 15s ease infinite !important;
+    color: #0f172a !important;
+}
+
+/* Glassmorphic Sidebar (Light Blue Mode) */
+[data-testid="stSidebar"] {
+    background: rgba(186, 230, 253, 0.35) !important;
+    backdrop-filter: blur(20px) !important;
+    -webkit-backdrop-filter: blur(20px) !important;
+    border-right: 1px solid rgba(255, 255, 255, 0.4) !important;
+    color: #0f172a !important;
+}
+[data-testid="stSidebarUserContent"] {
+    padding-top: 2rem !important;
+}
+/* Ensure Sidebar Text is Visible */
+[data-testid="stSidebar"] * {
+    color: #0f172a;
+}
+
+/* Glassmorphic Metric Cards (Light Blue Mode) */
+div[data-testid="stMetric"] {
+    background: rgba(224, 242, 254, 0.6) !important;
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.6) !important;
+    border-radius: 16px !important;
+    padding: 1.5rem !important;
+    box-shadow: 0 4px 15px 0 rgba(14, 165, 233, 0.15) !important;
+    transition: all 0.3s ease-in-out !important;
+}
+div[data-testid="stMetric"]:hover {
+    transform: translateY(-4px) !important;
+    background: rgba(255, 255, 255, 0.8) !important;
+    border: 1px solid #7dd3fc !important;
+    box-shadow: 0 8px 25px 0 rgba(14, 165, 233, 0.25) !important;
+}
+
+/* Metric Label Styling */
+div[data-testid="stMetricLabel"] {
+    color: #334155 !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.5px !important;
+    text-transform: uppercase !important;
+    font-size: 0.85rem !important;
+}
+
+/* Metric Value Styling */
+div[data-testid="stMetricValue"] {
+    color: #0f172a !important;
+    font-weight: 700 !important;
+    font-size: 1.8rem !important;
+}
+
+/* Modern Buttons (Contrasting Coral/Orange) */
+.stButton > button {
+    background: rgba(255, 255, 255, 0.8) !important;
+    backdrop-filter: blur(10px) !important;
+    -webkit-backdrop-filter: blur(10px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.9) !important;
+    border-radius: 8px !important;
+    color: #0f172a !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.5px !important;
+    transition: all 0.3s ease !important;
+    box-shadow: 0 2px 8px rgba(14, 165, 233, 0.15) !important;
+}
+.stButton > button:hover {
+    background: rgba(255, 255, 255, 1) !important;
+    border: 1px solid #38bdf8 !important;
+    transform: translateY(-2px) !important;
+    box-shadow: 0 4px 12px rgba(14, 165, 233, 0.2) !important;
+    color: #0f172a !important;
+}
+.stButton > button:active {
+    transform: translateY(0px) !important;
+}
+
+/* Primary Button Override (Vibrant Contrasting Coral/Orange) */
+.stButton > button[data-baseweb="button"][kind="primary"] {
+    background: linear-gradient(135deg, #f97316 0%, #ea580c 100%) !important;
+    border: none !important;
+    box-shadow: 0 4px 15px rgba(234, 88, 12, 0.3) !important;
+    color: #ffffff !important;
+    text-shadow: 0px 1px 2px rgba(0,0,0,0.2) !important;
+}
+.stButton > button[data-baseweb="button"][kind="primary"]:hover {
+    background: linear-gradient(135deg, #fb923c 0%, #f97316 100%) !important;
+    box-shadow: 0 6px 20px rgba(234, 88, 12, 0.5) !important;
+    color: #ffffff !important;
+}
+
+/* Glassmorphic Alerts */
+div[data-testid="stAlert"] {
+    background: rgba(224, 242, 254, 0.6) !important;
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+    border-radius: 12px !important;
+    border: 1px solid rgba(255, 255, 255, 0.6) !important;
+    color: #0f172a !important;
+    box-shadow: 0 4px 15px 0 rgba(14, 165, 233, 0.1) !important;
+}
+
+/* Style DataFrames / Tables */
+[data-testid="stDataFrame"] {
+    border-radius: 12px !important;
+    overflow: hidden !important;
+    border: 1px solid rgba(255, 255, 255, 0.5) !important;
+    box-shadow: 0 4px 15px 0 rgba(14, 165, 233, 0.1) !important;
+    background: rgba(240, 249, 255, 0.7) !important;
+}
+
+/* Style Tabs */
+[data-testid="stTabs"] button {
+    background-color: transparent !important;
+    border-bottom: 2px solid transparent !important;
+    color: #475569 !important;
+    font-weight: 500 !important;
+    transition: all 0.3s ease !important;
+}
+[data-testid="stTabs"] button:hover {
+    color: #0f172a !important;
+    background: rgba(224, 242, 254, 0.5) !important;
+    border-radius: 8px 8px 0 0 !important;
+}
+[data-testid="stTabs"] button[aria-selected="true"] {
+    color: #0f172a !important;
+    border-bottom: 2px solid #ea580c !important;
+    font-weight: 600 !important;
+}
+
+/* Divider Styling */
+hr {
+    border-top: 1px solid rgba(14, 165, 233, 0.2) !important;
+    margin: 2rem 0 !important;
+}
+
+/* JSON / Code Blocks */
+pre, code {
+    background: rgba(255, 255, 255, 0.6) !important;
+    backdrop-filter: blur(10px) !important;
+    border: 1px solid rgba(255, 255, 255, 0.8) !important;
+    border-radius: 8px !important;
+    color: #0369a1 !important;
+}
+
+/* File Uploaders */
+[data-testid="stFileUploader"] {
+    background: rgba(224, 242, 254, 0.5) !important;
+    border: 1px dashed rgba(56, 189, 248, 0.6) !important;
+    border-radius: 12px !important;
+    padding: 1rem !important;
+    transition: all 0.3s ease !important;
+}
+[data-testid="stFileUploader"]:hover {
+    border: 1px dashed rgba(234, 88, 12, 0.6) !important;
+    background: rgba(255, 255, 255, 0.8) !important;
+}

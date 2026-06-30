@@ -98,3 +98,37 @@ def render_candidate_tab(presentation: CandidatePresentation) -> None:
             st.markdown("---")
     else:
         st.info("No education information was detected.")
+
+    if getattr(overview, "duplicate_experiences", []) or getattr(
+        overview, "duplicate_education", []
+    ):
+        st.markdown("### Duplicate Records (Removed from Profile)")
+
+        if getattr(overview, "duplicate_experiences", []):
+            st.markdown("#### Duplicate Experience")
+            for exp in overview.duplicate_experiences:
+                if exp.title and exp.company:
+                    st.markdown(f"**{exp.title}** at {exp.company}")
+                elif exp.title:
+                    st.markdown(f"**{exp.title}**")
+                elif exp.company:
+                    st.markdown(f"**{exp.company}**")
+
+                st.markdown(f"*{exp.duration}*")
+                if exp.description:
+                    st.write(exp.description)
+                st.markdown("---")
+
+        if getattr(overview, "duplicate_education", []):
+            st.markdown("#### Duplicate Education")
+            for edu in overview.duplicate_education:
+                if edu.degree and edu.field:
+                    st.markdown(f"**{edu.degree}** in {edu.field}")
+                elif edu.degree:
+                    st.markdown(f"**{edu.degree}**")
+
+                if edu.institution:
+                    st.markdown(f"{edu.institution}")
+
+                st.markdown(f"*{edu.duration}*")
+                st.markdown("---")

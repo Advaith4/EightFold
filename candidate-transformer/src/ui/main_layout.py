@@ -4,7 +4,6 @@ import streamlit as st
 
 from src.agents.models import PresentationResult
 from src.ui.components.pipeline_overview import render_pipeline_overview
-from src.ui.components.status_banner import render_status_banner
 from src.ui.tabs.candidate import render_candidate_tab
 from src.ui.tabs.confidence import render_confidence_tab
 from src.ui.tabs.decision_log import render_decision_log_tab
@@ -14,19 +13,42 @@ from src.ui.tabs.recruiter import render_recruiter_tab
 
 
 def render_page_header() -> None:
-    """Render the application header."""
-    st.title("Candidate Intelligence Transformation Engine")
-    st.subheader("Deterministic Multi-Source Candidate Resolution Platform")
-
+    """Render the application header with glassmorphic aesthetic."""
     st.markdown(
         """
-        - Multi-source ingestion
-        - Identity resolution
-        - Duplicate detection
-        - Canonical candidate generation
-        - Provenance tracking
-        - Confidence scoring
+        <div style="padding: 0 0 2rem 0; text-align: center;">
+            <h1 style="font-size: 4rem; font-weight: 800; margin-bottom: 0.2rem;
+                background: -webkit-linear-gradient(45deg, #1e3a8a, #3b82f6);
+                -webkit-background-clip: text;
+                -webkit-text-fill-color: transparent;">
+                CITE.ai
+            </h1>
+            <p style="font-size: 1.3rem; color: #334155;
+                font-weight: 500; margin-bottom: 0.2rem;">
+                Candidate Intelligence Transformation Engine
+            </p>
+            <p style="font-size: 1rem; color: #64748b;
+                font-weight: 400; margin-top: 0;">
+                Deterministic Multi-Source Candidate Resolution Platform
+            </p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    
+    st.markdown(
         """
+        <div style="display: flex; justify-content: center; gap: 2rem;
+            color: #334155; font-size: 0.9rem; flex-wrap: wrap;">
+            <span>✨ Multi-source ingestion</span>
+            <span>✨ Identity resolution</span>
+            <span>✨ Duplicate detection</span>
+            <span>✨ Canonical generation</span>
+            <span>✨ Provenance tracking</span>
+            <span>✨ Confidence scoring</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
     )
     st.divider()
 
@@ -46,8 +68,6 @@ def render_main_layout(result: PresentationResult | None) -> None:
         )
         return
 
-    # Render the status banner suggestion
-    render_status_banner(result)
 
     # Section 1
     render_pipeline_overview(result)
@@ -103,8 +123,6 @@ def render_main_layout(result: PresentationResult | None) -> None:
 
     # Replace global result objects with selected presentation if possible
     # We will pass the whole result but ui tabs should use the selected presentation
-    # For now, we will just use the global result for tabs, wait we need to fix render_tabs
-    # Actually, we can update render_tabs to take `selected_index`.
     render_tabs(result, selected_index)
 
 
@@ -137,4 +155,4 @@ def render_tabs(result: PresentationResult, selected_index: int = 0) -> None:
     with tab5:
         render_recruiter_tab(presentation)
     with tab6:
-        render_raw_json_tab(presentation)
+        render_raw_json_tab(result.selected_candidate)

@@ -1,5 +1,8 @@
 .env
+.env.*
+!.env.example
 .venv/
+venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/
@@ -10,7 +13,13 @@ htmlcov/
 dist/
 build/
 *.egg-info/
+.idea/
+.vscode/
+.DS_Store
+*.log
+*.tmp
 logs/*.log
+logs/*.zip
 outputs/*
 !outputs/.gitkeep
 inputs/*

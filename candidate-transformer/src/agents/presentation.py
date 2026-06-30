@@ -203,6 +203,20 @@ class PresentationAgent:
                 )
             )
 
+        duplicate_education = []
+        for edu in getattr(candidate, "duplicate_education", []):
+            start = edu.start_date or "Unknown Start"
+            end = edu.end_date or "Present"
+            duration = f"{start} - {end}"
+            duplicate_education.append(
+                EducationCard(
+                    institution=edu.institution,
+                    degree=edu.credential,
+                    field=edu.field_of_study,
+                    duration=duration,
+                )
+            )
+
         experience = []
         for exp in candidate.experiences:
             start = exp.start_date or "Unknown Start"
@@ -217,8 +231,26 @@ class PresentationAgent:
                 )
             )
 
+        duplicate_experiences = []
+        for exp in getattr(candidate, "duplicate_experiences", []):
+            start = exp.start_date or "Unknown Start"
+            end = exp.end_date or "Present"
+            duration = f"{start} - {end}"
+            duplicate_experiences.append(
+                ExperienceCard(
+                    company=exp.organization,
+                    title=exp.title,
+                    duration=duration,
+                    description=exp.description,
+                )
+            )
+
         return CandidateOverview(
-            skills=skills, education=education, experience=experience
+            skills=skills,
+            education=education,
+            duplicate_education=duplicate_education,
+            experience=experience,
+            duplicate_experiences=duplicate_experiences,
         )
 
     def _build_confidence(self, candidate: CanonicalCandidate) -> ConfidenceSummary:
@@ -245,29 +277,81 @@ class PresentationAgent:
 
     def _build_provenance(self, candidate: CanonicalCandidate) -> list[ProvenanceRow]:
         rows = []
-
-        if candidate.identity.full_name:
-            pass
-
-        rows.append(
-            ProvenanceRow(
-                field="Name",
-                value=candidate.identity.full_name or "Unknown",
-                source="System",
-                method="Deterministic Extraction",
-                confidence="High",
-            )
-        )
-        if candidate.contact_info.preferred_email:
+        prov_lookup = {p.provenance_id: p for p in candidate.provenance}
+        
+        for log in candidate.decision_logs:
+            field_name = log.field_path.split(".")[-1].replace("_", " ").title()
+            field_provenances = [
+                prov_lookup[pid]
+                for pid in log.provenance_ids
+                if pid in prov_lookup
+            ]
+            if not field_provenances:
+                continue
+                
+            winning_provs = [
+                p for p in field_provenances if p.source_value == log.selected_value
+            ]
+            rejected_provs = [
+                p for p in field_provenances if p.source_value != log.selected_value
+            ]
+            
+            if not winning_provs:
+                continue
+                
+            winning_source = winning_provs[0].source_type
+            supporting_sources = [p.source_type for p in winning_provs[1:]]
+            all_agreeing_sources = [winning_source] + supporting_sources
+            
+            # Calculate Confidence Score & Explanation
+            if not rejected_provs and supporting_sources:
+                sources = ", ".join(str(s) for s in all_agreeing_sources)
+                conf = f"95% - Matched across {sources}"
+            elif not rejected_provs:
+                conf = f"75% - Verified via single source ({winning_source})"
+            else:
+                conf = f"80% - Resolved conflict via {log.rule_id or 'precedence'}"
+                
+            # 1. Row for the Winning Canonical Value
             rows.append(
                 ProvenanceRow(
-                    field="Primary Email",
-                    value=candidate.contact_info.preferred_email,
-                    source="System",
-                    method="Regex Match",
-                    confidence="High",
+                    field=field_name,
+                    value=str(log.selected_value),
+                    source=str(winning_source),
+                    method=log.reason or "Exact Agreement",
+                    confidence=conf,
+                    original_value=str(winning_provs[0].source_value),
+                    status="Canonical"
                 )
             )
+            
+            # 2. Rows for any Supporting Sources
+            for s_prov in winning_provs[1:]:
+                rows.append(
+                    ProvenanceRow(
+                        field=field_name,
+                        value=str(log.selected_value),
+                        source=str(s_prov.source_type),
+                        method="Exact Agreement",
+                        confidence="N/A",
+                        original_value=str(s_prov.source_value),
+                        status="Supporting"
+                    )
+                )
+                
+            # 3. Rows for any Rejected Values
+            for r_prov in rejected_provs:
+                rows.append(
+                    ProvenanceRow(
+                        field=field_name,
+                        value="[Rejected]",
+                        source=str(r_prov.source_type),
+                        method="Rejected by Precedence",
+                        confidence="N/A",
+                        original_value=str(r_prov.source_value),
+                        status="Rejected"
+                    )
+                )
 
         return rows
 

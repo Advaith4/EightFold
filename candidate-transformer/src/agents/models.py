@@ -99,7 +99,9 @@ class CandidateHeader(BaseModel):
 class CandidateOverview(BaseModel):
     skills: list[SkillTag]
     education: list[EducationCard]
+    duplicate_education: list[EducationCard] = []
     experience: list[ExperienceCard]
+    duplicate_experiences: list[ExperienceCard] = []
 
 
 class ConfidenceSummary(BaseModel):
@@ -116,6 +118,8 @@ class ProvenanceRow(BaseModel):
     source: str
     method: str
     confidence: str
+    original_value: str | None = None
+    status: str | None = None
 
 
 class DecisionTimeline(BaseModel):

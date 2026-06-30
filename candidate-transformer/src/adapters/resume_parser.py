@@ -189,7 +189,7 @@ class DeterministicResumeParser:
             for link in missing_links:
                 summary.append(f"• {link}")
 
-        # Attach the parsing summary to metadata so it travels with the RawCandidateRecord
+        # Attach parsing summary to metadata for the RawCandidateRecord.
         payload["metadata"] = {"parsing_summary": "\n".join(summary)}
 
         return payload
@@ -497,7 +497,7 @@ class DeterministicResumeParser:
             )
             clean_line = line.strip(" ,.-|")
 
-            # If we see a short, non-bullet line and we already have a date, it's a new entry
+            # A short non-bullet line after a date starts a new entry.
             if not is_bullet and "start_date" in current_entry and len(clean_line) < 60:
                 entries.append(current_entry)
                 current_entry = {}

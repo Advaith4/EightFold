@@ -50,6 +50,10 @@ def main() -> None:
     # Must be the first Streamlit command
     st.set_page_config(layout="wide")
 
+    # Inject glassmorphic theme
+    from src.ui.components.theme import inject_custom_theme
+    inject_custom_theme()
+
     # Initialize session state for the result
     if "result" not in st.session_state:
         st.session_state.result = None

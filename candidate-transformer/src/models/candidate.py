@@ -388,7 +388,9 @@ class CanonicalCandidate(DomainModel):
     contact_info: ContactInfo = Field(default_factory=ContactInfo)
     location: Location | None = None
     experiences: list[Experience] = Field(default_factory=list)
+    duplicate_experiences: list[Experience] = Field(default_factory=list)
     education: list[Education] = Field(default_factory=list)
+    duplicate_education: list[Education] = Field(default_factory=list)
     skills: list[Skill] = Field(default_factory=list)
     links: list[Link] = Field(default_factory=list)
     summary: str | None = None

@@ -1,175 +1,184 @@
 # Candidate Intelligence Transformation Engine
 
-Candidate Intelligence Transformation Engine is a foundation for transforming heterogeneous candidate data into a canonical, explainable, validated representation. Sprint 1 establishes the engineering baseline only: configuration, logging, package boundaries, interfaces, a pipeline skeleton, a Streamlit landing page, and initial tests.
+## Project Overview
 
-No candidate transformation business logic is implemented in this sprint.
+The Candidate Intelligence Transformation Engine transforms candidate information from multiple heterogeneous sources into canonical, explainable candidate profiles. It supports resume files, ATS JSON, recruiter CSV rows, and GitHub profile URLs, then performs deterministic ingestion, duplicate detection, canonical profile generation, confidence scoring, provenance tracking, projection, and validation-oriented presentation.
 
-## Architecture Philosophy
-
-The project follows Clean Architecture principles with explicit boundaries between UI, pipeline orchestration, services, adapters, configuration, and shared models. The foundation favors small focused classes, constructor-based dependency injection, explicit typing, fail-fast configuration errors, graceful runtime failures, and reusable interfaces.
+The repository is prepared for Eightfold assignment review and includes sample inputs, generated output JSON artifacts, tests, and a Streamlit demo application.
 
 ## Architecture Overview
 
 ```text
-Streamlit UI
-    |
-    v
-Application Shell (app.py)
-    |
-    +--> ConfigurationLoader
-    +--> ProjectLogger
-    +--> AdapterRegistry
-    |
-    v
-CandidatePipeline
-    |
-    v
-PipelineContext
+Adapters
+  ↓
+Duplicate Detection
+  ↓
+Canonical Candidate
+  ↓
+Merge
+  ↓
+Confidence
+  ↓
+Projection
+  ↓
+Validation
+  ↓
+Output
 ```
 
-The application shell wires dependencies together. The pipeline receives dependencies through constructor injection and moves a lightweight `PipelineContext` through future stages. Interfaces define extension points, while concrete business behavior is intentionally absent until later phases.
-
-## Module Responsibilities
-
-- `src/config`: YAML configuration loading, caching, and graceful reload behavior.
-- `src/logging`: Loguru-based console and rotating file logger setup.
-- `src/pipeline`: Pipeline orchestration skeleton and `PipelineContext` state object.
-- `src/adapters`: Adapter registry for externally created adapters.
-- `src/interfaces`: Abstract contracts for adapters, validators, projectors, rules, services, and future processing engines.
-- `src/ui`: Minimal Streamlit developer status page.
-- `src/exceptions`: Application-specific exception hierarchy.
-- `src/constants`: Reserved package for future static mapping and priority values.
-
-
-## Dependency Graph
+Runtime flow:
 
 ```text
-UI
-|
-v
-Application Shell
-|
-v
-ServiceContainer
-|
-+--> Configuration
-+--> Logging
-+--> AdapterRegistry
-|
-v
-Pipeline
-|
-v
-PipelineContext / StageResult
-|
-v
-Interfaces
-|
-v
-Adapters / Services / Models / Utilities
+Streamlit / Service API
+  ↓
+CandidateProcessingService
+  ↓
+IntakeAgent
+  ↓
+RawCandidateRecord[]
+  ↓
+DuplicateDetectionAgent
+  ↓
+CandidateGroup[]
+  ↓
+CandidateIntelligenceAgent
+  ↓
+CanonicalCandidate[]
+  ↓
+PresentationAgent
+  ↓
+PresentationResult / JSON Output
 ```
 
-Dependencies flow inward through explicit constructor injection. The pipeline receives infrastructure through `ServiceContainer` and does not construct adapters, loggers, or configuration loaders internally.
+## Supported Input Sources
 
-## Stable Public APIs
+- Resume PDF
+- Resume DOCX
+- ATS JSON object or array
+- Recruiter CSV with one candidate per row
+- GitHub profile URL, one URL per line in the UI
 
-The following interfaces are considered stable for Phase 2 extension work:
+## Features
 
-- `BaseAdapter`
-- `AdapterRegistry`
-- `PipelineContext`
-- `CandidatePipeline`
+- Multi-source ingestion
+- Multi-candidate aggregation
+- Deterministic duplicate detection
+- Canonical profile generation
+- Provenance tracking
+- Confidence scoring
+- Runtime configurable JSON projection
+- Presentation validation warnings
+- Streamlit-based review UI
+- Partial failure handling for invalid individual inputs
 
-Future changes should preserve these contracts unless a formal migration is documented.
-
-## Folder Structure
+## Repository Structure
 
 ```text
 candidate-transformer/
 ├── app.py
+├── requirements.txt
 ├── pyproject.toml
 ├── README.md
-├── .gitignore
-├── .env.example
 ├── config/
-│   ├── default.yaml
-│   └── logging.yaml
 ├── docs/
-├── inputs/
-├── outputs/
-├── logs/
-├── tests/
-└── src/
-    ├── adapters/
-    ├── constants/
-    ├── interfaces/
-    ├── models/
-    ├── pipeline/
-    ├── services/
-    ├── config/
-    ├── logging/
-    ├── exceptions/
-    ├── utils/
-    └── ui/
+├── sample_inputs/
+├── output/
+├── src/
+│   ├── adapters/
+│   ├── agents/
+│   ├── detection/
+│   ├── github/
+│   ├── loaders/
+│   ├── models/
+│   ├── pipeline/
+│   ├── services/
+│   └── ui/
+└── tests/
 ```
-
-## Technology Stack
-
-- Python 3.12+
-- Streamlit
-- Pydantic v2
-- Loguru
-- PyYAML
-- Pytest
-- Poetry
-- Black
-- Ruff
-- Mypy
 
 ## Installation
 
 ```bash
-poetry install
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
 ```
 
-## Running Locally
+On macOS/Linux, activate with:
 
 ```bash
-poetry run streamlit run app.py
+source .venv/bin/activate
 ```
 
-## Testing
+## Running The Project
 
 ```bash
-poetry run pytest
+streamlit run app.py
 ```
 
-## Engineering Principles
+The sidebar accepts resume files, ATS JSON files, recruiter CSV files, and GitHub profile URLs.
 
-- Preserve clean boundaries between UI, orchestration, configuration, logging, and future domain behavior.
-- Inject dependencies explicitly instead of constructing hidden runtime collaborators inside the pipeline.
-- Keep Phase 1 free of candidate-specific transformation logic.
-- Favor small interfaces and lightweight data structures that future phases can extend.
-- Fail fast for invalid configuration and fail clearly for missing registry entries.
+## Running Tests
 
-## Phase Roadmap
+```bash
+python -m pytest
+python -m ruff check .
+python -m mypy src tests app.py
+```
 
-- Phase 1: Engineering foundation, configuration, logging, interfaces, registry, pipeline context, and developer UI.
-- Phase 2: Source adapter implementations and raw source ingestion contracts.
-- Phase 3: Canonical candidate model, mapping, and normalization.
-- Phase 4: Grouping, merge behavior, confidence scoring, and provenance.
-- Phase 5: Projection, validation, exports, and audit reporting.
+Black formatting is configured in `pyproject.toml`; it is optional for final validation in this repository state.
 
-## Roadmap
+## Sample Datasets
 
-Sprint 1 creates the engineering foundation. Future sprints can add concrete adapters, canonical candidate models, normalization, grouping, merge behavior, confidence scoring, provenance tracking, schema projection, validation, exports, and audit logging.
+Sample data lives in `sample_inputs/` and is copied from the existing deterministic demo datasets:
 
-## Future Sprints
+- `tarun_resume.pdf`
+- `tarun_resume.txt`
+- `tarun_ats.json`
+- `tarun_recruiter.csv`
+- `arjun_ats.json`
+- `arjun_recruiter.csv`
 
-- Source adapters for Recruiter CSV, ATS JSON, and resume documents
-- Canonical candidate model and schema evolution
-- Normalization and entity grouping
-- Candidate merge and confidence scoring
-- Provenance-aware validation and projection
-- Explainable audit outputs
+GitHub live fetching is supported through public GitHub profile URLs. A token may be supplied locally through `.env` as `GITHUB_TOKEN`, but `.env` is ignored and must not be committed.
 
+## Output JSON Files
+
+Generated pipeline artifacts live in `output/`:
+
+- `output/default_output.json`: full `PresentationResult` generated by the service pipeline.
+- `output/custom_output.json`: runtime-configured projection generated from canonical candidates.
+
+These files are generated from the actual application pipeline, not hand-authored.
+
+## Edge Cases Handled
+
+- Multiple resumes in one run
+- ATS JSON object and array formats
+- Multiple recruiter CSV rows
+- Multiple GitHub URLs
+- Invalid GitHub URLs skipped without aborting the run
+- Malformed ATS array entries skipped when possible
+- Unsupported file inputs skipped at service aggregation boundaries
+- Duplicate candidates grouped by deterministic identity signals
+- Missing candidate fields surfaced as presentation warnings
+
+## Assumptions And Limitations
+
+- Duplicate detection is deterministic and rule-based; it does not use AI, embeddings, or fuzzy matching libraries.
+- GitHub extraction uses the GitHub REST API and only maps explicitly returned public data.
+- Resume parsing is deterministic and heuristic; OCR and semantic resume understanding are out of scope.
+- LinkedIn, databases, exports to PDF/DOCX, and production authentication are out of scope.
+- GitHub API rate limits may apply without a local `GITHUB_TOKEN`.
+
+## Future Improvements
+
+- Candidate switching in the Streamlit UI
+- Richer field-level provenance presentation
+- Expanded validation reporting
+- Configurable source priority policies
+- Optional persistent GitHub response cache
+- API server wrapper around the service layer
+
+## Demo Video Placeholder
+
+Demo video link: _to be added before final submission_.

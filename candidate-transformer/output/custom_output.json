@@ -1,0 +1,216 @@
+{
+  "pipeline_summary": {
+    "raw_record_count": 5,
+    "candidate_group_count": 2,
+    "canonical_candidate_count": 2,
+    "selected_candidate_strategy": "first_candidate",
+    "workflow_status": "REQUIRES_HUMAN_REVIEW"
+  },
+  "processing_summary": {
+    "selected_candidate_id": "candidate_f9522912b959507d93cce04652130a5e",
+    "candidate_ids": [
+      "candidate_f9522912b959507d93cce04652130a5e",
+      "candidate_a9844c66327f56569548dfbcfe3b5abf"
+    ],
+    "sources": [
+      "Resume",
+      "ATS",
+      "CSV"
+    ],
+    "number_of_decisions": 10,
+    "missing_fields": [
+      "education",
+      "experience",
+      "certifications"
+    ],
+    "conflicting_fields": [
+      "contact_info.preferred_phone"
+    ]
+  },
+  "candidates": [
+    {
+      "candidate_id": "candidate_f9522912b959507d93cce04652130a5e",
+      "name": "Tarun Jayam",
+      "primary_email": "tarunjayam@example.com",
+      "primary_phone": "+919876543210",
+      "skills": [
+        "Python",
+        "Docker",
+        "React"
+      ],
+      "confidence": 0.6699999999999999,
+      "provenance": [
+        {
+          "provenance_id": "prov_resume_sha256_a2740b2c4d5296875468d4de001c6d14b7694df57ee081a805cbd2f902fb4072_contact_info_preferred_email_0",
+          "raw_record_id": "resume_sha256_a2740b2c4d5296875468d4de001c6d14b7694df57ee081a805cbd2f902fb4072",
+          "source_type": "Resume",
+          "source_system": "file",
+          "source_field": "email",
+          "source_value": "tarunjayam@example.com",
+          "source_location": "sample_inputs\\tarun_resume.pdf",
+          "extracted_at": "2026-06-30T15:45:22.176143Z"
+        },
+        {
+          "provenance_id": "prov_ats_sha256_1c8e29e97ec97888e1544fa79b0ae84e9dbea6eaef5fc8bb3cfc666df39e648c_contact_info_preferred_email_1",
+          "raw_record_id": "ats_sha256_1c8e29e97ec97888e1544fa79b0ae84e9dbea6eaef5fc8bb3cfc666df39e648c",
+          "source_type": "ATS",
+          "source_system": "ats",
+          "source_field": "email",
+          "source_value": "tarunjayam@example.com",
+          "source_location": "sample_inputs\\tarun_ats.json",
+          "extracted_at": "2026-06-30T15:45:22.177128Z"
+        },
+        {
+          "provenance_id": "prov_csv_sha256_3bdccee85e17d2d12d00e71c6cc6e0fb05eaa173c03e89444f9df1ae65218adb_contact_info_preferred_email_2",
+          "raw_record_id": "csv_sha256_3bdccee85e17d2d12d00e71c6cc6e0fb05eaa173c03e89444f9df1ae65218adb",
+          "source_type": "CSV",
+          "source_system": "recruiter_csv",
+          "source_field": "email",
+          "source_value": "tarunjayam@example.com",
+          "source_location": "sample_inputs\\tarun_recruiter.csv",
+          "extracted_at": "2026-06-30T15:45:22.178129Z"
+        },
+        {
+          "provenance_id": "prov_resume_sha256_a2740b2c4d5296875468d4de001c6d14b7694df57ee081a805cbd2f902fb4072_contact_info_preferred_phone_0",
+          "raw_record_id": "resume_sha256_a2740b2c4d5296875468d4de001c6d14b7694df57ee081a805cbd2f902fb4072",
+          "source_type": "Resume",
+          "source_system": "file",
+          "source_field": "phone",
+          "source_value": "+91 98765 43210",
+          "source_location": "sample_inputs\\tarun_resume.pdf",
+          "extracted_at": "2026-06-30T15:45:22.176143Z"
+        },
+        {
+          "provenance_id": "prov_ats_sha256_1c8e29e97ec97888e1544fa79b0ae84e9dbea6eaef5fc8bb3cfc666df39e648c_contact_info_preferred_phone_1",
+          "raw_record_id": "ats_sha256_1c8e29e97ec97888e1544fa79b0ae84e9dbea6eaef5fc8bb3cfc666df39e648c",
+          "source_type": "ATS",
+          "source_system": "ats",
+          "source_field": "phone",
+          "source_value": "+919876543210",
+          "source_location": "sample_inputs\\tarun_ats.json",
+          "extracted_at": "2026-06-30T15:45:22.177128Z"
+        },
+        {
+          "provenance_id": "prov_csv_sha256_3bdccee85e17d2d12d00e71c6cc6e0fb05eaa173c03e89444f9df1ae65218adb_contact_info_preferred_phone_2",
+          "raw_record_id": "csv_sha256_3bdccee85e17d2d12d00e71c6cc6e0fb05eaa173c03e89444f9df1ae65218adb",
+          "source_type": "CSV",
+          "source_system": "recruiter_csv",
+          "source_field": "phone",
+          "source_value": "+918888888888",
+          "source_location": "sample_inputs\\tarun_recruiter.csv",
+          "extracted_at": "2026-06-30T15:45:22.178129Z"
+        },
+        {
+          "provenance_id": "prov_ats_sha256_1c8e29e97ec97888e1544fa79b0ae84e9dbea6eaef5fc8bb3cfc666df39e648c_identity_full_name_0",
+          "raw_record_id": "ats_sha256_1c8e29e97ec97888e1544fa79b0ae84e9dbea6eaef5fc8bb3cfc666df39e648c",
+          "source_type": "ATS",
+          "source_system": "ats",
+          "source_field": "name",
+          "source_value": "Tarun Jayam",
+          "source_location": "sample_inputs\\tarun_ats.json",
+          "extracted_at": "2026-06-30T15:45:22.177128Z"
+        },
+        {
+          "provenance_id": "prov_csv_sha256_3bdccee85e17d2d12d00e71c6cc6e0fb05eaa173c03e89444f9df1ae65218adb_identity_full_name_1",
+          "raw_record_id": "csv_sha256_3bdccee85e17d2d12d00e71c6cc6e0fb05eaa173c03e89444f9df1ae65218adb",
+          "source_type": "CSV",
+          "source_system": "recruiter_csv",
+          "source_field": "name",
+          "source_value": "Tarun Jayam",
+          "source_location": "sample_inputs\\tarun_recruiter.csv",
+          "extracted_at": "2026-06-30T15:45:22.178129Z"
+        },
+        {
+          "provenance_id": "prov_ats_sha256_1c8e29e97ec97888e1544fa79b0ae84e9dbea6eaef5fc8bb3cfc666df39e648c_location_display_name_0",
+          "raw_record_id": "ats_sha256_1c8e29e97ec97888e1544fa79b0ae84e9dbea6eaef5fc8bb3cfc666df39e648c",
+          "source_type": "ATS",
+          "source_system": "ats",
+          "source_field": "location",
+          "source_value": "Trivandrum",
+          "source_location": "sample_inputs\\tarun_ats.json",
+          "extracted_at": "2026-06-30T15:45:22.177128Z"
+        }
+      ]
+    },
+    {
+      "candidate_id": "candidate_a9844c66327f56569548dfbcfe3b5abf",
+      "name": "Arjun Nair",
+      "primary_email": "arjun.nair@example.com",
+      "primary_phone": "+919999999999",
+      "skills": [],
+      "confidence": 0.5499999999999999,
+      "provenance": [
+        {
+          "provenance_id": "prov_ats_sha256_5bb29bcc8637e290aa41e9b2d242b8fc32b8fcafd07394ab66eeeabb99116684_identity_full_name_0",
+          "raw_record_id": "ats_sha256_5bb29bcc8637e290aa41e9b2d242b8fc32b8fcafd07394ab66eeeabb99116684",
+          "source_type": "ATS",
+          "source_system": "ats",
+          "source_field": "name",
+          "source_value": "Arjun Nair",
+          "source_location": "sample_inputs\\arjun_ats.json",
+          "extracted_at": "2026-06-30T15:45:22.177128Z"
+        },
+        {
+          "provenance_id": "prov_csv_sha256_73b11a87cb77f01353108df88dd9c54779ac5286cd16351877ee2e442e448a4b_identity_full_name_1",
+          "raw_record_id": "csv_sha256_73b11a87cb77f01353108df88dd9c54779ac5286cd16351877ee2e442e448a4b",
+          "source_type": "CSV",
+          "source_system": "recruiter_csv",
+          "source_field": "name",
+          "source_value": "Arjun Nair",
+          "source_location": "sample_inputs\\arjun_recruiter.csv",
+          "extracted_at": "2026-06-30T15:45:22.178129Z"
+        },
+        {
+          "provenance_id": "prov_ats_sha256_5bb29bcc8637e290aa41e9b2d242b8fc32b8fcafd07394ab66eeeabb99116684_contact_info_preferred_email_0",
+          "raw_record_id": "ats_sha256_5bb29bcc8637e290aa41e9b2d242b8fc32b8fcafd07394ab66eeeabb99116684",
+          "source_type": "ATS",
+          "source_system": "ats",
+          "source_field": "email",
+          "source_value": "arjun.nair@example.com",
+          "source_location": "sample_inputs\\arjun_ats.json",
+          "extracted_at": "2026-06-30T15:45:22.177128Z"
+        },
+        {
+          "provenance_id": "prov_csv_sha256_73b11a87cb77f01353108df88dd9c54779ac5286cd16351877ee2e442e448a4b_contact_info_preferred_email_1",
+          "raw_record_id": "csv_sha256_73b11a87cb77f01353108df88dd9c54779ac5286cd16351877ee2e442e448a4b",
+          "source_type": "CSV",
+          "source_system": "recruiter_csv",
+          "source_field": "email",
+          "source_value": "arjun.nair@example.com",
+          "source_location": "sample_inputs\\arjun_recruiter.csv",
+          "extracted_at": "2026-06-30T15:45:22.178129Z"
+        },
+        {
+          "provenance_id": "prov_ats_sha256_5bb29bcc8637e290aa41e9b2d242b8fc32b8fcafd07394ab66eeeabb99116684_contact_info_preferred_phone_0",
+          "raw_record_id": "ats_sha256_5bb29bcc8637e290aa41e9b2d242b8fc32b8fcafd07394ab66eeeabb99116684",
+          "source_type": "ATS",
+          "source_system": "ats",
+          "source_field": "phone",
+          "source_value": "+919999999999",
+          "source_location": "sample_inputs\\arjun_ats.json",
+          "extracted_at": "2026-06-30T15:45:22.177128Z"
+        },
+        {
+          "provenance_id": "prov_csv_sha256_73b11a87cb77f01353108df88dd9c54779ac5286cd16351877ee2e442e448a4b_contact_info_preferred_phone_1",
+          "raw_record_id": "csv_sha256_73b11a87cb77f01353108df88dd9c54779ac5286cd16351877ee2e442e448a4b",
+          "source_type": "CSV",
+          "source_system": "recruiter_csv",
+          "source_field": "phone",
+          "source_value": "+919999999999",
+          "source_location": "sample_inputs\\arjun_recruiter.csv",
+          "extracted_at": "2026-06-30T15:45:22.178129Z"
+        },
+        {
+          "provenance_id": "prov_ats_sha256_5bb29bcc8637e290aa41e9b2d242b8fc32b8fcafd07394ab66eeeabb99116684_location_display_name_0",
+          "raw_record_id": "ats_sha256_5bb29bcc8637e290aa41e9b2d242b8fc32b8fcafd07394ab66eeeabb99116684",
+          "source_type": "ATS",
+          "source_system": "ats",
+          "source_field": "location",
+          "source_value": "Chennai",
+          "source_location": "sample_inputs\\arjun_ats.json",
+          "extracted_at": "2026-06-30T15:45:22.177128Z"
+        }
+      ]
+    }
+  ]
+}

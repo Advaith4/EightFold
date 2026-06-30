@@ -1,0 +1,17 @@
+Tarun Jayam
+tarunjayam@example.com
++91 98765 43210
+Trivandrum, Kerala, India
+GitHub: https://github.com/tarunjayantvm
+
+Experience
+Software Engineer at Tech Innovations
+2022 - Present
+Developed backend services in Python.
+
+Education
+B.Tech in Computer Science
+College of Engineering Trivandrum
+
+Skills
+Python, Django, React, Postgres, Docker
