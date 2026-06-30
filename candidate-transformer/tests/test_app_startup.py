@@ -33,6 +33,7 @@ def test_application_startup(monkeypatch: Any) -> None:
     monkeypatch.setattr(st, "warning", lambda x: None)
     monkeypatch.setattr(st, "file_uploader", lambda *args, **kwargs: None)
     monkeypatch.setattr(st, "text_input", lambda *args, **kwargs: None)
+    monkeypatch.setattr(st, "text_area", lambda *args, **kwargs: None)
     monkeypatch.setattr(st, "button", lambda *args, **kwargs: False)
     monkeypatch.setattr(st, "session_state", MockSessionState())
     monkeypatch.setattr(st, "rerun", lambda: None)

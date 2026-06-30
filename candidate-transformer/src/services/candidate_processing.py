@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
 
 from src.adapters import (
@@ -55,11 +56,11 @@ class CandidateProcessingService:
     def process_candidate(
         self,
         *,
-        resume_pdf: UploadedContent | FilePayload | None = None,
-        resume_docx: UploadedContent | FilePayload | None = None,
-        ats_json: UploadedContent | FilePayload | None = None,
-        recruiter_csv: UploadedContent | FilePayload | None = None,
-        github_url: str | None = None,
+        resume_pdf: object | None = None,
+        resume_docx: object | None = None,
+        ats_json: object | None = None,
+        recruiter_csv: object | None = None,
+        github_url: str | Iterable[str] | None = None,
     ) -> PresentationResult:
         """Execute the full candidate intelligence workflow for supplied sources."""
         artifacts = self._collect_artifacts(
@@ -77,11 +78,11 @@ class CandidateProcessingService:
     def _collect_artifacts(
         self,
         *,
-        resume_pdf: UploadedContent | FilePayload | None,
-        resume_docx: UploadedContent | FilePayload | None,
-        ats_json: UploadedContent | FilePayload | None,
-        recruiter_csv: UploadedContent | FilePayload | None,
-        github_url: str | None,
+        resume_pdf: object | None,
+        resume_docx: object | None,
+        ats_json: object | None,
+        recruiter_csv: object | None,
+        github_url: str | Iterable[str] | None,
     ) -> list[CandidateArtifact]:
         artifacts: list[CandidateArtifact] = []
         file_inputs = {
@@ -91,20 +92,66 @@ class CandidateProcessingService:
             "recruiter_csv": recruiter_csv,
         }
         for name, value in file_inputs.items():
-            if value is None:
-                continue
-            self._validate_file_input(name, value)
-            artifacts.append(value)
-        if github_url is not None:
-            github_url = github_url.strip()
-            if github_url:
-                if not github_url.startswith("http") and "github.com" not in github_url:
-                    github_url = f"https://github.com/{github_url}"
-                elif not github_url.startswith("http"):
-                    github_url = f"https://{github_url}"
-            self._validate_github_url(github_url)
-            artifacts.append(github_url)
+            artifacts.extend(self._valid_file_artifacts(name, value))
+        artifacts.extend(self._valid_github_urls(github_url))
         return artifacts
+
+    def _valid_file_artifacts(
+        self, name: str, value: object | None
+    ) -> list[CandidateArtifact]:
+        if value is None:
+            return []
+        valid: list[CandidateArtifact] = []
+        for item in self._iter_file_inputs(value):
+            try:
+                self._validate_file_input(name, item)
+            except ValidationError:
+                continue
+            valid.append(item)
+        return valid
+
+    def _iter_file_inputs(self, value: object) -> tuple[CandidateArtifact, ...]:
+        if isinstance(value, (bytes, str, Path, FilePayload)):
+            return (value,)
+        if isinstance(value, Iterable):
+            return tuple(
+                item
+                for item in value
+                if isinstance(item, (bytes, str, Path, FilePayload))
+            )
+        return ()
+
+    def _valid_github_urls(
+        self, value: str | Iterable[str] | None
+    ) -> list[CandidateArtifact]:
+        urls: list[CandidateArtifact] = []
+        if value is None:
+            return urls
+        raw_values: list[str] = []
+        if isinstance(value, str):
+            raw_values.extend(value.splitlines())
+        else:
+            raw_values.extend(str(item) for item in value)
+        for raw_value in raw_values:
+            github_url = self._normalize_github_url(raw_value)
+            if github_url is None:
+                continue
+            try:
+                self._validate_github_url(github_url)
+            except ValidationError:
+                continue
+            urls.append(github_url)
+        return urls
+
+    def _normalize_github_url(self, value: str) -> str | None:
+        github_url = value.strip()
+        if not github_url:
+            return None
+        if not github_url.startswith("http") and "github.com" not in github_url:
+            return f"https://github.com/{github_url}"
+        if not github_url.startswith("http"):
+            return f"https://{github_url}"
+        return github_url
 
     def _validate_file_input(
         self, name: str, value: UploadedContent | FilePayload

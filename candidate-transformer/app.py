@@ -64,10 +64,18 @@ def main() -> None:
     with st.sidebar:
         st.header("Candidate Intake")
 
-        resume_file = st.file_uploader("Resume Upload", type=["pdf", "docx"])
-        ats_file = st.file_uploader("ATS JSON Upload", type=["json"])
-        recruiter_file = st.file_uploader("Recruiter CSV Upload", type=["csv"])
-        github_url = st.text_input("GitHub URL")
+        resume_files = st.file_uploader(
+            "Resume Upload", type=["pdf", "docx"], accept_multiple_files=True
+        )
+        ats_files = st.file_uploader(
+            "ATS JSON Upload", type=["json"], accept_multiple_files=True
+        )
+        recruiter_files = st.file_uploader(
+            "Recruiter CSV Upload", type=["csv"], accept_multiple_files=True
+        )
+        github_url = st.text_area(
+            "GitHub URLs", placeholder="One GitHub profile URL per line"
+        )
 
         analyze_clicked = st.button(
             "Analyze Candidate", type="primary", use_container_width=True
@@ -80,30 +88,38 @@ def main() -> None:
 
     if analyze_clicked:
         # Avoid processing if all inputs are empty
-        if not any([resume_file, ats_file, recruiter_file, github_url]):
+        if not any([resume_files, ats_files, recruiter_files, github_url]):
             st.warning("Please provide at least one input.")
         else:
             with st.spinner("Analyzing candidate..."):
                 try:
                     # Convert Streamlit UploadedFiles to Paths
-                    resume_path = save_uploaded_file(resume_file)
-                    ats_path = save_uploaded_file(ats_file)
-                    recruiter_path = save_uploaded_file(recruiter_file)
+                    resume_paths = [
+                        path
+                        for uploaded_file in resume_files or []
+                        if (path := save_uploaded_file(uploaded_file)) is not None
+                    ]
+                    ats_paths = [
+                        path
+                        for uploaded_file in ats_files or []
+                        if (path := save_uploaded_file(uploaded_file)) is not None
+                    ]
+                    recruiter_paths = [
+                        path
+                        for uploaded_file in recruiter_files or []
+                        if (path := save_uploaded_file(uploaded_file)) is not None
+                    ]
 
                     # Call the backend service
                     result = processing_service.process_candidate(
-                        resume_pdf=(
-                            resume_path
-                            if resume_path and resume_path.suffix == ".pdf"
-                            else None
-                        ),
-                        resume_docx=(
-                            resume_path
-                            if resume_path and resume_path.suffix == ".docx"
-                            else None
-                        ),
-                        ats_json=ats_path,
-                        recruiter_csv=recruiter_path,
+                        resume_pdf=[
+                            path for path in resume_paths if path.suffix == ".pdf"
+                        ],
+                        resume_docx=[
+                            path for path in resume_paths if path.suffix == ".docx"
+                        ],
+                        ats_json=ats_paths,
+                        recruiter_csv=recruiter_paths,
                         github_url=github_url if github_url else None,
                     )
 

@@ -6,7 +6,12 @@ from typing import Any
 
 import pytest
 from pydantic import ValidationError as PydanticValidationError
-from src.adapters import AdapterRegistry
+from src.adapters import (
+    AdapterRegistry,
+    ATSJsonAdapter,
+    RecruiterCSVAdapter,
+    ResumeFileAdapter,
+)
 from src.agents import (
     AgentOrchestrator,
     CandidateGroup,
@@ -171,6 +176,164 @@ def test_intake_agent_routes_loaded_payload_to_registered_adapter() -> None:
     assert [record.record_id for record in records] == ["file"]
 
 
+
+def test_intake_agent_processes_multiple_github_urls_and_skips_invalid() -> None:
+    """Multiple GitHub URLs produce records while invalid inputs are collected."""
+    fetcher = FakeGitHubFetcher()
+    adapter = FakeGitHubAdapter()
+    agent = IntakeAgent(github_fetcher=fetcher, github_adapter=adapter)
+
+    records = agent.process(["https://github.com/octocat", "not-a-real-file"])
+
+    assert [record.record_id for record in records] == ["github"]
+    assert fetcher.requested_url == "https://github.com/octocat"
+    assert agent.errors
+
+
+def test_intake_agent_processes_multiple_resume_payloads() -> None:
+    """Every resume file payload produces an independent raw record."""
+    registry = AdapterRegistry()
+    registry.register(ResumeFileAdapter())
+    agent = IntakeAgent(adapter_registry=registry)
+    payloads = [
+        FilePayload(
+            text="Ada Lovelace\nPython",
+            metadata=FileMetadata(
+                filename="resume-one.pdf",
+                content_type="application/pdf",
+                extension=".pdf",
+                size_bytes=19,
+                checksum="sha256:resume-one",
+            ),
+        ),
+        FilePayload(
+            text="Grace Hopper\nCOBOL",
+            metadata=FileMetadata(
+                filename="resume-two.docx",
+                content_type=(
+                    "application/vnd.openxmlformats-officedocument"
+                    ".wordprocessingml.document"
+                ),
+                extension=".docx",
+                size_bytes=18,
+                checksum="sha256:resume-two",
+            ),
+        ),
+    ]
+
+    records = agent.process(payloads)
+
+    assert [record.source_type for record in records] == [
+        DomainSourceType.RESUME,
+        DomainSourceType.RESUME,
+    ]
+    assert len(records) == 2
+
+
+def test_intake_agent_processes_recruiter_csv_rows() -> None:
+    """Every recruiter CSV row becomes a raw candidate record."""
+    registry = AdapterRegistry()
+    registry.register(RecruiterCSVAdapter())
+    payload = FilePayload(
+        text="full_name,email\nAda,ada@example.com\nGrace,grace@example.com\n",
+        metadata=FileMetadata(
+            filename="candidates.csv",
+            content_type="text/csv",
+            extension=".csv",
+            size_bytes=58,
+            checksum="sha256:csv-many",
+        ),
+    )
+    agent = IntakeAgent(adapter_registry=registry)
+
+    records = agent.process(payload)
+
+    assert [record.payload["email"] for record in records] == [
+        "ada@example.com",
+        "grace@example.com",
+    ]
+    assert [record.source_record_id for record in records] == [
+        "candidates.csv#1",
+        "candidates.csv#2",
+    ]
+
+
+def test_intake_agent_processes_ats_json_object_and_array() -> None:
+    """ATS JSON object and array formats produce raw candidate records."""
+    registry = AdapterRegistry()
+    registry.register(ATSJsonAdapter())
+    object_payload = FilePayload(
+        text='{"email":"ada@example.com"}',
+        metadata=FileMetadata(
+            filename="candidate.json",
+            content_type="application/json",
+            extension=".json",
+            size_bytes=27,
+            checksum="sha256:ats-one",
+        ),
+    )
+    array_payload = FilePayload(
+        text='[{"email":"grace@example.com"},{"email":"katherine@example.com"}]',
+        metadata=FileMetadata(
+            filename="candidates.json",
+            content_type="application/json",
+            extension=".json",
+            size_bytes=65,
+            checksum="sha256:ats-many",
+        ),
+    )
+    agent = IntakeAgent(adapter_registry=registry)
+
+    records = agent.process([object_payload, array_payload])
+
+    assert [record.payload["email"] for record in records] == [
+        "ada@example.com",
+        "grace@example.com",
+        "katherine@example.com",
+    ]
+
+
+def test_intake_agent_skips_malformed_ats_array_items() -> None:
+    """Malformed ATS array entries are skipped without aborting the file."""
+    registry = AdapterRegistry()
+    registry.register(ATSJsonAdapter())
+    payload = FilePayload(
+        text='[{"email":"ada@example.com"}, null, "bad", {}]',
+        metadata=FileMetadata(
+            filename="candidates.json",
+            content_type="application/json",
+            extension=".json",
+            size_bytes=45,
+            checksum="sha256:ats-partial",
+        ),
+    )
+    agent = IntakeAgent(adapter_registry=registry)
+
+    records = agent.process(payload)
+
+    assert [record.payload["email"] for record in records] == ["ada@example.com"]
+
+
+def test_intake_agent_continues_after_partial_file_failure() -> None:
+    """One failed artifact does not stop later valid artifacts."""
+    registry = AdapterRegistry()
+    registry.register(RecruiterCSVAdapter())
+    payload = FilePayload(
+        text="full_name,email\nAda,ada@example.com\n",
+        metadata=FileMetadata(
+            filename="candidates.csv",
+            content_type="text/csv",
+            extension=".csv",
+            size_bytes=37,
+            checksum="sha256:csv-valid",
+        ),
+    )
+    agent = IntakeAgent(adapter_registry=registry)
+
+    records = agent.process(["missing.unknown", payload])
+
+    assert [record.payload["email"] for record in records] == ["ada@example.com"]
+    assert agent.errors
 def test_candidate_intelligence_process_returns_canonical_and_context() -> None:
     """Sprint 7.0 returns a canonical candidate plus updated decision context."""
     result = CandidateIntelligenceAgent().process(

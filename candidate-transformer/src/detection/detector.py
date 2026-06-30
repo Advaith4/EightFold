@@ -20,6 +20,15 @@ ATS_JSON_KEYS = frozenset(
         "resume",
         "experience",
         "education",
+        "email",
+        "phone",
+        "full_name",
+        "first_name",
+        "last_name",
+        "candidate_id",
+        "ats_candidate_id",
+        "applicant_id",
+        "id",
     }
 )
 RECRUITER_CSV_HEADERS = frozenset(
@@ -33,6 +42,10 @@ RECRUITER_CSV_HEADERS = frozenset(
         "skills",
         "experience",
         "education",
+        "candidate_id",
+        "ats_candidate_id",
+        "applicant_id",
+        "id",
         "resume",
         "linkedin",
         "github",
@@ -99,6 +112,11 @@ class SourceDetector:
         except json.JSONDecodeError:
             return SourceType.UNKNOWN
         if isinstance(parsed, Mapping) and self._contains_key(parsed, ATS_JSON_KEYS):
+            return SourceType.ATS_JSON
+        if isinstance(parsed, list) and any(
+            isinstance(item, Mapping) and self._contains_key(item, ATS_JSON_KEYS)
+            for item in parsed
+        ):
             return SourceType.ATS_JSON
         return SourceType.UNKNOWN
 

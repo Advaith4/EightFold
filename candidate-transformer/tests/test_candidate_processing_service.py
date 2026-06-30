@@ -12,7 +12,6 @@ from src.agents import (
     PresentationAgent,
     PresentationResult,
 )
-from src.exceptions import ValidationError
 from src.loaders import CorruptedFileError, FileMetadata, FilePayload
 from src.models import PayloadFormat, RawCandidateRecord
 from src.models.base import JsonValue
@@ -173,16 +172,18 @@ def test_candidate_processing_service_allows_no_inputs() -> None:
         "",
     ],
 )
-def test_candidate_processing_service_rejects_invalid_github_url(url: str) -> None:
-    """GitHub URLs are validated before external fetches can run."""
-    service = CandidateProcessingService(orchestrator=RecordingOrchestrator())
+def test_candidate_processing_service_skips_invalid_github_url(url: str) -> None:
+    """Invalid GitHub URLs are skipped without aborting processing."""
+    orchestrator = RecordingOrchestrator()
+    service = CandidateProcessingService(orchestrator=orchestrator)
 
-    with pytest.raises(ValidationError):
-        service.process_candidate(github_url=url)
+    result = service.process_candidate(github_url=url)
 
+    assert isinstance(result, PresentationResult)
+    assert orchestrator.received == []
 
-def test_candidate_processing_service_propagates_corrupted_resume() -> None:
-    """Existing loader/orchestrator errors are not wrapped or hidden."""
+def test_candidate_processing_service_delegates_resume_failures_to_intake() -> None:
+    """Source-level failures are handled below the service aggregation boundary."""
     service = CandidateProcessingService(
         orchestrator=FailingOrchestrator(CorruptedFileError("PDF file is corrupted"))
     )
@@ -190,15 +191,42 @@ def test_candidate_processing_service_propagates_corrupted_resume() -> None:
     with pytest.raises(CorruptedFileError, match="corrupted"):
         service.process_candidate(resume_pdf=Path("resume.pdf"))
 
+def test_candidate_processing_service_skips_unsupported_file_type() -> None:
+    """Unsupported file parameters are skipped before orchestration."""
+    orchestrator = RecordingOrchestrator()
+    service = CandidateProcessingService(orchestrator=orchestrator)
 
-def test_candidate_processing_service_rejects_unsupported_file_type() -> None:
-    """File parameters enforce their declared source type."""
-    service = CandidateProcessingService(orchestrator=RecordingOrchestrator())
+    result = service.process_candidate(resume_pdf=Path("resume.txt"))
 
-    with pytest.raises(ValidationError, match=".pdf"):
-        service.process_candidate(resume_pdf=Path("resume.txt"))
+    assert isinstance(result, PresentationResult)
+    assert orchestrator.received == []
 
 
+def test_candidate_processing_service_accepts_multiple_inputs() -> None:
+    """The public service aggregates multiple supported source inputs."""
+    orchestrator = RecordingOrchestrator()
+    service = CandidateProcessingService(orchestrator=orchestrator)
+    resume_payloads = [
+        file_payload(".pdf", "one.pdf"),
+        file_payload(".pdf", "two.pdf"),
+    ]
+    ats_payloads = [file_payload(".json", "one.json")]
+    csv_payloads = [file_payload(".csv", "one.csv")]
+
+    service.process_candidate(
+        resume_pdf=resume_payloads,
+        ats_json=ats_payloads,
+        recruiter_csv=csv_payloads,
+        github_url="https://github.com/octocat\nhttps://example.com/nope",
+    )
+
+    assert orchestrator.received == [
+        resume_payloads[0],
+        resume_payloads[1],
+        ats_payloads[0],
+        csv_payloads[0],
+        "https://github.com/octocat",
+    ]
 def test_candidate_processing_service_accepts_loaded_payloads() -> None:
     """Preloaded payloads can be supplied by UI or API callers."""
     payload = file_payload(".json", "candidate.json")

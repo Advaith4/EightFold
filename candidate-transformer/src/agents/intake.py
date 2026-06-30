@@ -35,16 +35,25 @@ class IntakeAgent:
         self._github_adapter = github_adapter or GitHubAdapter()
         self._loaders = dict(loaders or {})
         self._adapter_registry = adapter_registry or AdapterRegistry()
+        self._errors: list[str] = []
 
     def process(
         self, artifacts: CandidateArtifact | Iterable[CandidateArtifact]
     ) -> list[RawCandidateRecord]:
         """Acquire and route candidate artifacts into raw source records."""
-        return [
-            record
-            for artifact in self._normalize_artifacts(artifacts)
-            for record in self._process_one(artifact)
-        ]
+        self._errors = []
+        records: list[RawCandidateRecord] = []
+        for artifact in self._normalize_artifacts(artifacts):
+            try:
+                records.extend(self._process_one(artifact))
+            except Exception as exc:  # noqa: BLE001
+                self._errors.append(str(exc))
+        return records
+
+    @property
+    def errors(self) -> tuple[str, ...]:
+        """Return non-fatal ingestion errors from the last process call."""
+        return tuple(self._errors)
 
     def _normalize_artifacts(
         self, artifacts: CandidateArtifact | Iterable[CandidateArtifact]
@@ -58,11 +67,22 @@ class IntakeAgent:
             detected_source = self._source_detector.detect(artifact)
             if detected_source == SourceType.GITHUB_PROFILE:
                 github_payload = self._github_fetcher.fetch(artifact)
-                return [self._github_adapter.parse(github_payload)]
+                return self._records_from_parsed(
+                    self._github_adapter.parse(github_payload)
+                )
         file_payload = self._load_payload(artifact)
         detected_source = self._source_detector.detect(file_payload)
         adapter = self._adapter_for(detected_source)
-        return [adapter.parse(file_payload)]
+        return self._records_from_parsed(adapter.parse(file_payload))
+
+    def _records_from_parsed(self, parsed: object) -> list[RawCandidateRecord]:
+        if isinstance(parsed, RawCandidateRecord):
+            return [parsed]
+        if isinstance(parsed, list):
+            return [
+                record for record in parsed if isinstance(record, RawCandidateRecord)
+            ]
+        raise AdapterError("Adapter did not return RawCandidateRecord objects")
 
     def _load_payload(self, artifact: CandidateArtifact) -> FilePayload:
         if isinstance(artifact, FilePayload):

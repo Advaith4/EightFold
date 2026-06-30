@@ -46,12 +46,24 @@ class LoadedFileAdapter(BaseAdapter):
             raise AdapterError(f"{self.__class__.__name__} requires a FilePayload")
         return raw_data
 
-    def _record_id(self, prefix: str, payload: FilePayload) -> str:
+    def _record_id(
+        self, prefix: str, payload: FilePayload, suffix: str | None = None
+    ) -> str:
         checksum = payload.metadata.checksum.replace(":", "_")
+        if suffix is not None:
+            return f"{prefix}_{checksum}_{suffix}"
         return f"{prefix}_{checksum}"
 
     def _source_record_id(self, payload: FilePayload) -> str | None:
         return payload.metadata.source_path or payload.metadata.filename
+
+    def _indexed_source_record_id(
+        self, payload: FilePayload, index: int, include_index: bool
+    ) -> str | None:
+        source_id = self._source_record_id(payload)
+        if source_id is None or not include_index:
+            return source_id
+        return f"{source_id}#{index}"
 
 
 class ResumeFileAdapter(LoadedFileAdapter):
@@ -94,22 +106,46 @@ class ATSJsonAdapter(LoadedFileAdapter):
         """Return the source type used by source detection."""
         return InfrastructureSourceType.ATS_JSON.value
 
-    def parse(self, raw_data: Any) -> RawCandidateRecord:
-        """Parse validated JSON text into an ATS raw candidate record."""
+    def parse(self, raw_data: Any) -> RawCandidateRecord | list[RawCandidateRecord]:
+        """Parse JSON text into one or more ATS raw candidate records."""
         payload = self._require_payload(raw_data)
-        parsed = self._parse_json(payload)
+        parsed_items = self._parse_json(payload)
+        records = [
+            self._record_from_item(
+                payload,
+                item,
+                index,
+                include_index=len(parsed_items) > 1,
+            )
+            for index, item in enumerate(parsed_items, start=1)
+        ]
+        if len(records) == 1:
+            return records[0]
+        return records
+
+    def _record_from_item(
+        self,
+        payload: FilePayload,
+        item: dict[str, JsonValue],
+        index: int,
+        *,
+        include_index: bool,
+    ) -> RawCandidateRecord:
+        suffix = f"row_{index}" if include_index else None
         return RawCandidateRecord(
-            record_id=self._record_id("ats", payload),
+            record_id=self._record_id("ats", payload, suffix),
             source_type=SourceType.ATS,
             source_system="ats",
-            source_record_id=self._source_record_id(payload),
+            source_record_id=self._indexed_source_record_id(
+                payload, index, include_index
+            ),
             payload_format=PayloadFormat.JSON_DOCUMENT,
-            payload=parsed,
+            payload=item,
             raw_text=payload.text,
             checksum=payload.metadata.checksum,
         )
 
-    def _parse_json(self, payload: FilePayload) -> dict[str, JsonValue]:
+    def _parse_json(self, payload: FilePayload) -> list[dict[str, JsonValue]]:
         text = payload.text or (
             payload.content_bytes.decode("utf-8") if payload.content_bytes else None
         )
@@ -119,10 +155,15 @@ class ATSJsonAdapter(LoadedFileAdapter):
             parsed = json.loads(text)
         except json.JSONDecodeError as exc:
             raise AdapterError("ATS JSON payload is malformed") from exc
-        if not isinstance(parsed, dict):
-            raise AdapterError("ATS JSON payload must be an object")
-
-        return self._normalize_json(parsed)
+        if isinstance(parsed, dict):
+            return [self._normalize_json(parsed)]
+        if isinstance(parsed, list):
+            return [
+                self._normalize_json(item)
+                for item in parsed
+                if isinstance(item, dict) and item
+            ]
+        raise AdapterError("ATS JSON payload must be an object or array")
 
     def _normalize_json(self, parsed: dict[str, Any]) -> dict[str, Any]:
         """Flatten nested fields common in ATS JSON."""
@@ -152,35 +193,61 @@ class RecruiterCSVAdapter(LoadedFileAdapter):
         """Return the source type used by source detection."""
         return InfrastructureSourceType.RECRUITER_CSV.value
 
-    def parse(self, raw_data: Any) -> RawCandidateRecord:
-        """Parse the first recruiter CSV row into a raw candidate record."""
+    def parse(self, raw_data: Any) -> RawCandidateRecord | list[RawCandidateRecord]:
+        """Parse recruiter CSV rows into raw candidate records."""
         payload = self._require_payload(raw_data)
-        row = self._first_row(payload)
+        rows = self._rows(payload)
+        records = [
+            self._record_from_row(
+                payload,
+                row,
+                index,
+                include_index=len(rows) > 1,
+            )
+            for index, row in enumerate(rows, start=1)
+        ]
+        if len(records) == 1:
+            return records[0]
+        return records
+
+    def _record_from_row(
+        self,
+        payload: FilePayload,
+        row: dict[str, JsonValue],
+        index: int,
+        *,
+        include_index: bool,
+    ) -> RawCandidateRecord:
+        suffix = f"row_{index}" if include_index else None
         return RawCandidateRecord(
-            record_id=self._record_id("csv", payload),
+            record_id=self._record_id("csv", payload, suffix),
             source_type=SourceType.CSV,
             source_system="recruiter_csv",
-            source_record_id=self._source_record_id(payload),
+            source_record_id=self._indexed_source_record_id(
+                payload, index, include_index
+            ),
             payload_format=PayloadFormat.CSV_ROW,
             payload=row,
             raw_text=payload.text,
             checksum=payload.metadata.checksum,
         )
 
-    def _first_row(self, payload: FilePayload) -> dict[str, JsonValue]:
+    def _rows(self, payload: FilePayload) -> list[dict[str, JsonValue]]:
         text = payload.text or (
             payload.content_bytes.decode("utf-8") if payload.content_bytes else None
         )
         if text is None:
             raise AdapterError("RecruiterCSVAdapter requires CSV text")
         reader = csv.DictReader(StringIO(text))
-        try:
-            row = next(reader)
-        except StopIteration as exc:
-            raise AdapterError("Recruiter CSV payload contains no rows") from exc
-
-        cleaned_row = {key: value for key, value in row.items() if key is not None}
-        return self._normalize_csv(cleaned_row)
+        rows = []
+        for row in reader:
+            cleaned_row = {key: value for key, value in row.items() if key is not None}
+            normalized = self._normalize_csv(cleaned_row)
+            if normalized:
+                rows.append(normalized)
+        if not rows:
+            raise AdapterError("Recruiter CSV payload contains no rows")
+        return rows
 
     def _normalize_csv(self, row: dict[str, Any]) -> dict[str, Any]:
         """Normalize CSV row headers to canonical payload keys."""
@@ -188,7 +255,8 @@ class RecruiterCSVAdapter(LoadedFileAdapter):
 
         for k, v in row.items():
             clean_k = str(k).strip().lower().replace(" ", "_")
-            normalized[clean_k] = v
+            if v is not None:
+                normalized[clean_k] = v
 
         if "full_name" not in normalized and "name" not in normalized:
             first = normalized.get("first_name", "")
