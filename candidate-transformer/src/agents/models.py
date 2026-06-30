@@ -41,7 +41,11 @@ class CandidateGroup(BaseModel):
 
     group_id: str
     records: tuple[RawCandidateRecord, ...]
-    match_keys: tuple[str, ...]
+    match_keys: tuple[str, ...] = ()
+    matched_fields: tuple[str, ...] = ()
+    matching_rule: str = "No Match"
+    source_types: tuple[str, ...] = ()
+    grouping_decisions: tuple[str, ...] = ()
 
 
 class IntelligenceResult(BaseModel):

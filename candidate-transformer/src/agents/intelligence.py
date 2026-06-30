@@ -6,6 +6,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from uuid import UUID, uuid5
 
+from src.agents.duplicate_detection import DuplicateDetectionAgent
 from src.agents.models import (
     CandidateGroup,
     DecisionContext,
@@ -94,9 +95,16 @@ class CandidateIntelligenceAgent:
         SourceType.LINKEDIN.value: 4,
     }
 
-    def __init__(self, confidence_policy: SourceConfidencePolicy | None = None) -> None:
+    def __init__(
+        self,
+        confidence_policy: SourceConfidencePolicy | None = None,
+        duplicate_detection_agent: DuplicateDetectionAgent | None = None,
+    ) -> None:
         """Initialize deterministic reasoning policies."""
         self._confidence_policy = confidence_policy or SourceConfidencePolicy()
+        self._duplicate_detection_agent = (
+            duplicate_detection_agent or DuplicateDetectionAgent()
+        )
 
     def process(self, raw_records: list[RawCandidateRecord]) -> IntelligenceResult:
         """Produce canonical candidates and explainable decision context."""
@@ -125,15 +133,8 @@ class CandidateIntelligenceAgent:
     def group_records(
         self, raw_records: list[RawCandidateRecord]
     ) -> list[CandidateGroup]:
-        """Create one compatibility group per raw record without deduplication."""
-        return [
-            CandidateGroup(
-                group_id=self._stable_id("group", record.record_id),
-                records=(record,),
-                match_keys=(f"record:{record.record_id}",),
-            )
-            for record in raw_records
-        ]
+        """Group raw records using deterministic duplicate detection."""
+        return self._duplicate_detection_agent.process(raw_records)
 
     def _build_result(
         self, raw_records: list[RawCandidateRecord]

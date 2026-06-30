@@ -12,6 +12,7 @@ from src.agents import (
     CandidateGroup,
     CandidateIntelligenceAgent,
     DecisionContext,
+    DuplicateDetectionAgent,
     IntakeAgent,
     IntelligenceResult,
     PresentationAgent,
@@ -200,8 +201,208 @@ def test_candidate_intelligence_process_returns_canonical_and_context() -> None:
     assert [skill.name for skill in result.canonical_candidate.skills] == ["Python"]
 
 
-def test_candidate_intelligence_creates_default_group_per_record() -> None:
-    """Sprint 1.2 creates compatibility groups without duplicate detection."""
+
+def test_duplicate_detection_matches_same_email() -> None:
+    """Exact normalized email joins records into one group."""
+    groups = DuplicateDetectionAgent().process(
+        [
+            raw_record(
+                "resume",
+                source_type=DomainSourceType.RESUME,
+                payload={"email": " ADA@example.com "},
+            ),
+            raw_record(
+                "ats",
+                source_type=DomainSourceType.ATS,
+                payload={"email": "ada@example.com"},
+            ),
+        ]
+    )
+
+    assert len(groups) == 1
+    assert groups[0].matching_rule == "Exact Email Match"
+    assert groups[0].matched_fields == ("email",)
+    assert groups[0].source_types == ("Resume", "ATS")
+    assert "email:ada@example.com" in groups[0].match_keys
+    assert "Rule: Exact Email Match" in groups[0].grouping_decisions[0]
+
+
+def test_duplicate_detection_matches_same_phone() -> None:
+    """Exact normalized phone joins records into one group."""
+    groups = DuplicateDetectionAgent().process(
+        [
+            raw_record("resume", payload={"phone": "+1 (555) 123-4567"}),
+            raw_record(
+                "csv",
+                source_type=DomainSourceType.CSV,
+                payload={"phone": "5551234567"},
+            ),
+        ]
+    )
+
+    assert len(groups) == 1
+    assert groups[0].matching_rule == "Exact Phone Match"
+    assert groups[0].matched_fields == ("phone",)
+
+
+def test_duplicate_detection_matches_same_github_profile() -> None:
+    """GitHub username and profile URL join records into one group."""
+    groups = DuplicateDetectionAgent().process(
+        [
+            raw_record(
+                "resume",
+                source_type=DomainSourceType.RESUME,
+                payload={"github_url": "https://github.com/OctoCat/"},
+            ),
+            raw_record(
+                "github",
+                source_type=DomainSourceType.GITHUB,
+                payload={"profile": {"login": "octocat"}},
+            ),
+        ]
+    )
+
+    assert len(groups) == 1
+    assert groups[0].matching_rule == "GitHub Profile Match"
+    assert groups[0].matched_fields == ("github",)
+
+
+def test_duplicate_detection_matches_same_ats_candidate_id() -> None:
+    """ATS candidate IDs join ATS records into one group."""
+    groups = DuplicateDetectionAgent().process(
+        [
+            raw_record(
+                "ats-1",
+                source_type=DomainSourceType.ATS,
+                payload={"candidate_id": "ATS-123"},
+            ),
+            raw_record(
+                "ats-2",
+                source_type=DomainSourceType.ATS,
+                payload={"candidate_id": " ats-123 "},
+            ),
+        ]
+    )
+
+    assert len(groups) == 1
+    assert groups[0].matching_rule == "ATS Candidate ID"
+    assert groups[0].matched_fields == ("ats_candidate_id",)
+
+
+def test_duplicate_detection_matches_name_and_organization() -> None:
+    """Name plus organization joins records without contact identifiers."""
+    groups = DuplicateDetectionAgent().process(
+        [
+            raw_record(
+                "resume",
+                payload={
+                    "full_name": "Ada Lovelace",
+                    "experience": [{"organization": "Analytical Engines"}],
+                },
+            ),
+            raw_record(
+                "csv",
+                source_type=DomainSourceType.CSV,
+                payload={
+                    "name": " ada   lovelace ",
+                    "company": "Analytical Engines",
+                },
+            ),
+        ]
+    )
+
+    assert len(groups) == 1
+    assert groups[0].matching_rule == "Name + Organization"
+    assert groups[0].matched_fields == ("name+organization",)
+
+
+def test_duplicate_detection_matches_name_and_education() -> None:
+    """Name plus institution joins records without contact identifiers."""
+    groups = DuplicateDetectionAgent().process(
+        [
+            raw_record(
+                "resume",
+                payload={
+                    "full_name": "Grace Hopper",
+                    "education": [{"institution": "Yale University"}],
+                },
+            ),
+            raw_record(
+                "ats",
+                source_type=DomainSourceType.ATS,
+                payload={
+                    "full_name": "Grace Hopper",
+                    "education": [{"school": "yale university"}],
+                },
+            ),
+        ]
+    )
+
+    assert len(groups) == 1
+    assert groups[0].matching_rule == "Name + Educational Institution"
+    assert groups[0].matched_fields == ("name+education",)
+
+
+def test_duplicate_detection_keeps_different_candidates_separate() -> None:
+    """Records without matching identity signals stay in separate groups."""
+    groups = DuplicateDetectionAgent().process(
+        [
+            raw_record("one", payload={"email": "one@example.com"}),
+            raw_record("two", payload={"email": "two@example.com"}),
+        ]
+    )
+
+    assert len(groups) == 2
+    assert [group.matching_rule for group in groups] == ["No Match", "No Match"]
+
+
+def test_duplicate_detection_handles_empty_and_missing_fields() -> None:
+    """Empty input and missing identity fields remain deterministic."""
+    agent = DuplicateDetectionAgent()
+
+    assert agent.process([]) == []
+    groups = agent.process(
+        [
+            raw_record("one", payload={"record_id": "one"}),
+            raw_record("two", payload={"record_id": "two"}),
+        ]
+    )
+
+    assert len(groups) == 2
+    assert groups[0].matched_fields == ()
+
+
+def test_candidate_intelligence_uses_duplicate_detection_groups() -> None:
+    """Candidate intelligence now consumes detector-created groups."""
+    result = CandidateIntelligenceAgent().process(
+        [
+            raw_record(
+                "resume",
+                source_type=DomainSourceType.RESUME,
+                payload={"full_name": "Ada Lovelace", "email": "ada@example.com"},
+            ),
+            raw_record(
+                "ats",
+                source_type=DomainSourceType.ATS,
+                payload={"full_name": "Ada Lovelace", "email": "ada@example.com"},
+            ),
+            raw_record(
+                "csv",
+                source_type=DomainSourceType.CSV,
+                payload={"full_name": "Grace Hopper", "email": "grace@example.com"},
+            ),
+        ]
+    )
+
+    assert len(result.candidate_groups) == 2
+    assert len(result.canonical_candidates) == 2
+    assert result.candidate_groups[0].matching_rule == "Exact Email Match"
+    assert [record.record_id for record in result.candidate_groups[0].records] == [
+        "resume",
+        "ats",
+    ]
+def test_candidate_intelligence_groups_records_by_duplicate_detection() -> None:
+    """Sprint 1.3 groups records using deterministic duplicate detection."""
     result = CandidateIntelligenceAgent().process(
         [
             raw_record(
@@ -223,17 +424,18 @@ def test_candidate_intelligence_creates_default_group_per_record() -> None:
         ]
     )
 
-    assert len(result.candidate_groups) == 2
-    assert all(isinstance(group, CandidateGroup) for group in result.candidate_groups)
-    assert [group.records[0].record_id for group in result.candidate_groups] == [
+    assert len(result.candidate_groups) == 1
+    assert isinstance(result.candidate_groups[0], CandidateGroup)
+    assert [record.record_id for record in result.candidate_groups[0].records] == [
         "resume",
         "github",
     ]
-    assert result.candidate_groups[0].match_keys == ("record:resume",)
-    assert result.candidate_groups[1].match_keys == ("record:github",)
-    assert len(result.canonical_candidates) == 2
+    assert result.candidate_groups[0].matching_rule == "Exact Email Match"
+    assert result.candidate_groups[0].matched_fields == ("email",)
+    assert len(result.canonical_candidates) == 1
     assert result.selected_candidate == result.canonical_candidates[0]
     assert result.canonical_candidate == result.selected_candidate
+
 
 def test_candidate_intelligence_returns_canonical_candidate_per_group() -> None:
     """Every compatibility group produces a canonical candidate."""
@@ -451,8 +653,8 @@ def test_candidate_intelligence_reports_missing_fields() -> None:
     )
 
 
-def test_candidate_intelligence_does_not_deduplicate_records_in_bridge() -> None:
-    """Duplicate detection is intentionally deferred to Sprint 1.3."""
+def test_candidate_intelligence_records_duplicate_sources_after_grouping() -> None:
+    """Duplicate source observations remain explicit after grouping."""
     result = CandidateIntelligenceAgent().process(
         [
             raw_record("same", payload={"email": "one@example.com"}),
@@ -460,10 +662,11 @@ def test_candidate_intelligence_does_not_deduplicate_records_in_bridge() -> None
         ]
     )
 
-    assert len(result.candidate_groups) == 2
-    assert len(result.canonical_candidates) == 2
-    assert result.decision_context.duplicate_sources == ()
-    assert result.decision_context.duplicate_record_ids == ()
+    assert len(result.candidate_groups) == 1
+    assert len(result.canonical_candidates) == 1
+    assert result.candidate_groups[0].matching_rule == "GitHub Profile Match"
+    assert result.decision_context.duplicate_sources == ("GitHub",)
+    assert result.decision_context.duplicate_record_ids == ("same",)
 
 def test_candidate_intelligence_handles_empty_input() -> None:
     """Empty input yields an empty canonical candidate and context."""

@@ -1,5 +1,6 @@
 """Multi-agent orchestration layer exports."""
 
+from src.agents.duplicate_detection import DuplicateDetectionAgent
 from src.agents.intake import CandidateArtifact, IntakeAgent
 from src.agents.intelligence import CandidateIntelligenceAgent, SourceConfidencePolicy
 from src.agents.models import (
@@ -18,6 +19,7 @@ __all__ = [
     "CandidateGroup",
     "CandidateIntelligenceAgent",
     "DecisionContext",
+    "DuplicateDetectionAgent",
     "IntakeAgent",
     "IntelligenceResult",
     "PresentationAgent",
