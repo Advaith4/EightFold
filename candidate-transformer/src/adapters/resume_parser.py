@@ -63,8 +63,16 @@ def normalize_date(
 
 
 # Common regex patterns
-MONTH_REGEX = r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|Spring|Summer|Fall|Winter)"
-DATE_RANGE_PATTERN = f"({MONTH_REGEX}\\s+\\d{{4}}|\\d{{4}}|{MONTH_REGEX})\\s*(?:-|to|–|—)\\s*({MONTH_REGEX}\\s+\\d{{4}}|\\d{{4}}|Present|Current)"
+MONTH_REGEX = (
+    r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?"
+    r"|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?"
+    r"|Nov(?:ember)?|Dec(?:ember)?|Spring|Summer|Fall|Winter)"
+)
+DATE_RANGE_PATTERN = (
+    f"({MONTH_REGEX}\\s+\\d{{4}}|\\d{{4}}|{MONTH_REGEX})"
+    f"\\s*(?:-|to|–|—)\\s*"
+    f"({MONTH_REGEX}\\s+\\d{{4}}|\\d{{4}}|Present|Current)"
+)
 DATE_PATTERN = f"(?:{MONTH_REGEX}\\s+)?\\d{{4}}"
 PHONE_PATTERN = r"\+?\d[\d\s().-]{8,}\d"
 EMAIL_PATTERN = r"[\w.+-]+@[\w-]+\.[\w.-]+"
@@ -187,12 +195,12 @@ class DeterministicResumeParser:
 
         # Look for location (simple heuristic: city, state or country pattern)
         for line in self.lines[:10]:
-            if re.search(r"^[a-zA-Z\s]+,\s*[A-Z]{2}(?:\s+\d{5})?$", line) or re.search(
-                r"^[A-Z][a-z]+,\s*[A-Z][a-z]+$", line
-            ):
-                if line != result.get("full_name"):
-                    result["location"] = line
-                    break
+            is_location_line = re.search(
+                r"^[a-zA-Z\s]+,\s*[A-Z]{2}(?:\s+\d{5})?$", line
+            ) or re.search(r"^[A-Z][a-z]+,\s*[A-Z][a-z]+$", line)
+            if is_location_line and line != result.get("full_name"):
+                result["location"] = line
+                break
 
         return result
 
@@ -261,7 +269,8 @@ class DeterministicResumeParser:
                     current_entry = {}
                 continue
 
-            # If we already have an institution and a credential and a date, any new line starts a new entry
+            # If institution, credential, and date exist,
+            # any new line starts a new entry.
             if "institution" in current_entry and "start_date" in current_entry:
                 entries.append(current_entry)
                 current_entry = {}
@@ -381,7 +390,8 @@ class DeterministicResumeParser:
         current_entry: dict[str, Any] = {}
 
         for line in section:
-            # We assume projects might not have dates, so we start a new one when a line doesn't start with a bullet
+            # Projects might not have dates, so a non-bullet line
+            # starts a new entry.
             if line.startswith("-") or line.startswith("•") or line.startswith("*"):
                 if "description" not in current_entry:
                     current_entry["description"] = line.lstrip("-•* ")
@@ -418,7 +428,8 @@ class DeterministicResumeParser:
             parts = re.split(r"[,|:•-]", line)
             for part in parts:
                 cleaned = part.strip()
-                # Ignore headers like "Programming Languages:" if split didn't catch it perfectly
+                # Ignore headers like "Programming Languages:"
+                # if split did not catch it perfectly.
                 if cleaned and " " not in cleaned.strip(": "):
                     found_skills.append(cleaned.strip(": "))
                 elif cleaned:

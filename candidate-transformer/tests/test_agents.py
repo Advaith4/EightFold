@@ -9,6 +9,7 @@ from pydantic import ValidationError as PydanticValidationError
 from src.adapters import AdapterRegistry
 from src.agents import (
     AgentOrchestrator,
+    CandidateGroup,
     CandidateIntelligenceAgent,
     DecisionContext,
     IntakeAgent,
@@ -184,7 +185,7 @@ def test_candidate_intelligence_process_returns_canonical_and_context() -> None:
                         "html_url": "https://github.com/octocat",
                     },
                     "repositories": [],
-                    "languages": {"Python": 100},
+                    "languages": {"octocat/hello-world": {"Python": 100}},
                 },
             )
         ]
@@ -196,8 +197,66 @@ def test_candidate_intelligence_process_returns_canonical_and_context() -> None:
     assert result.canonical_candidate.identity.full_name == "The Octocat"
     assert result.canonical_candidate.summary == "GitHub mascot"
     assert result.canonical_candidate.contact_info.emails == ["octocat@example.com"]
-    assert result.canonical_candidate.skills == []
+    assert [skill.name for skill in result.canonical_candidate.skills] == ["Python"]
 
+
+def test_candidate_intelligence_creates_default_group_per_record() -> None:
+    """Sprint 1.2 creates compatibility groups without duplicate detection."""
+    result = CandidateIntelligenceAgent().process(
+        [
+            raw_record(
+                "resume",
+                source_type=DomainSourceType.RESUME,
+                payload={"full_name": "Ada Lovelace", "email": "ada@example.com"},
+            ),
+            raw_record(
+                "github",
+                payload={
+                    "profile": {
+                        "login": "ada",
+                        "name": "Ada Lovelace",
+                        "email": "ada@example.com",
+                    },
+                    "languages": {"ada/project": {"Python": 100}},
+                },
+            ),
+        ]
+    )
+
+    assert len(result.candidate_groups) == 2
+    assert all(isinstance(group, CandidateGroup) for group in result.candidate_groups)
+    assert [group.records[0].record_id for group in result.candidate_groups] == [
+        "resume",
+        "github",
+    ]
+    assert result.candidate_groups[0].match_keys == ("record:resume",)
+    assert result.candidate_groups[1].match_keys == ("record:github",)
+    assert len(result.canonical_candidates) == 2
+    assert result.selected_candidate == result.canonical_candidates[0]
+    assert result.canonical_candidate == result.selected_candidate
+
+def test_candidate_intelligence_returns_canonical_candidate_per_group() -> None:
+    """Every compatibility group produces a canonical candidate."""
+    result = CandidateIntelligenceAgent().process(
+        [
+            raw_record(
+                "one",
+                source_type=DomainSourceType.RESUME,
+                payload={"full_name": "Ada Lovelace", "email": "ada@example.com"},
+            ),
+            raw_record(
+                "two",
+                source_type=DomainSourceType.ATS,
+                payload={"full_name": "Grace Hopper", "email": "grace@example.com"},
+            ),
+        ]
+    )
+
+    assert len(result.candidate_groups) == 2
+    assert len(result.canonical_candidates) == 2
+    assert [
+        candidate.identity.full_name for candidate in result.canonical_candidates
+    ] == ["Ada Lovelace", "Grace Hopper"]
 
 def test_candidate_intelligence_maps_single_resume_source() -> None:
     """Resume-only candidates map explicit fields without inference."""
@@ -234,12 +293,12 @@ def test_candidate_intelligence_maps_single_resume_source() -> None:
         ((DomainSourceType.ATS,), 0.95),
         ((DomainSourceType.RESUME,), 0.85),
         ((DomainSourceType.GITHUB,), 0.80),
-        ((DomainSourceType.RESUME, DomainSourceType.ATS), 0.95),
+        ((DomainSourceType.RESUME, DomainSourceType.ATS), 0.85),
         ((DomainSourceType.RESUME, DomainSourceType.GITHUB), 0.85),
         ((DomainSourceType.ATS, DomainSourceType.GITHUB), 0.95),
         (
             (DomainSourceType.RESUME, DomainSourceType.ATS, DomainSourceType.GITHUB),
-            0.95,
+            0.85,
         ),
     ],
 )
@@ -262,14 +321,11 @@ def test_candidate_intelligence_assigns_deterministic_confidence(
     ]
 
     result = CandidateIntelligenceAgent().process(records)
-    # Calculate expected bonus based on mocked payload
-    bonus = 0.0
-    if len(records) > 0:
-        bonus += 0.11
+    bonus = 0.11
     expected = min(0.99, max(0.0, expected_score + bonus))
 
-    assert result.canonical_candidate.confidence.score == pytest.approx(expected)
-
+    assert result.selected_candidate.confidence.score == pytest.approx(expected)
+    assert result.canonical_candidates[0].confidence.score == pytest.approx(expected)
 
 def test_candidate_intelligence_accepts_replaceable_confidence_policy() -> None:
     """Confidence values are centralized in a replaceable policy object."""
@@ -299,8 +355,8 @@ def test_candidate_intelligence_accepts_replaceable_confidence_policy() -> None:
     )
 
 
-def test_candidate_intelligence_prefers_ats_over_resume_and_github() -> None:
-    """Scalar conflicts use ATS > Resume > GitHub precedence."""
+def test_candidate_intelligence_preserves_multiple_unmerged_candidates() -> None:
+    """Sprint 1.2 carries each candidate forward without cross-group merging."""
     result = CandidateIntelligenceAgent().process(
         [
             raw_record(
@@ -320,29 +376,19 @@ def test_candidate_intelligence_prefers_ats_over_resume_and_github() -> None:
         ]
     )
 
-    candidate = result.canonical_candidate
-    assert candidate.contact_info.preferred_email == "ats@example.com"
-    assert candidate.contact_info.emails == [
-        "github@example.com",
-        "resume@example.com",
-        "ats@example.com",
-    ]
-    assert "contact_info.preferred_email" in result.decision_context.conflicting_fields
-    email_decision = next(
-        log
-        for log in candidate.decision_logs
-        if log.field_path == "contact_info.preferred_email"
+    assert len(result.canonical_candidates) == 3
+    assert (
+        result.selected_candidate.contact_info.preferred_email
+        == "github@example.com"
     )
-    assert email_decision.selected_value == "ats@example.com"
-    assert email_decision.rejected_values == [
-        "github@example.com",
-        "resume@example.com",
-    ]
-    assert email_decision.rule_id == "source_precedence_v1"
+    assert [
+        candidate.contact_info.preferred_email
+        for candidate in result.canonical_candidates
+    ] == ["github@example.com", "resume@example.com", "ats@example.com"]
+    assert result.decision_context.conflicting_fields == ()
 
-
-def test_candidate_intelligence_equal_priority_keeps_first_value() -> None:
-    """Equal source priority keeps the first encountered explicit value."""
+def test_candidate_intelligence_selected_candidate_remains_first_group() -> None:
+    """Backward compatibility keeps the first canonical candidate selected."""
     result = CandidateIntelligenceAgent().process(
         [
             raw_record(
@@ -358,9 +404,11 @@ def test_candidate_intelligence_equal_priority_keeps_first_value() -> None:
         ]
     )
 
-    assert result.canonical_candidate.contact_info.preferred_phone == "+10000000001"
-    assert "contact_info.preferred_phone" in result.decision_context.conflicting_fields
-
+    assert result.selected_candidate == result.canonical_candidates[0]
+    assert result.canonical_candidate == result.selected_candidate
+    assert result.selected_candidate.contact_info.preferred_phone == "+10000000001"
+    assert result.canonical_candidates[1].contact_info.preferred_phone == "+10000000002"
+    assert result.decision_context.conflicting_fields == ()
 
 def test_candidate_intelligence_tracks_provenance_for_populated_fields() -> None:
     """Canonical fields retain provenance back to raw records."""
@@ -403,8 +451,8 @@ def test_candidate_intelligence_reports_missing_fields() -> None:
     )
 
 
-def test_candidate_intelligence_detects_duplicate_sources_and_records() -> None:
-    """Duplicate source and record observations remain explicit."""
+def test_candidate_intelligence_does_not_deduplicate_records_in_bridge() -> None:
+    """Duplicate detection is intentionally deferred to Sprint 1.3."""
     result = CandidateIntelligenceAgent().process(
         [
             raw_record("same", payload={"email": "one@example.com"}),
@@ -412,10 +460,10 @@ def test_candidate_intelligence_detects_duplicate_sources_and_records() -> None:
         ]
     )
 
-    assert result.decision_context.duplicate_sources == ("GitHub",)
-    assert result.decision_context.duplicate_record_ids == ("same",)
-    assert "Duplicate records detected: same" in result.decision_context.decision_log
-
+    assert len(result.candidate_groups) == 2
+    assert len(result.canonical_candidates) == 2
+    assert result.decision_context.duplicate_sources == ()
+    assert result.decision_context.duplicate_record_ids == ()
 
 def test_candidate_intelligence_handles_empty_input() -> None:
     """Empty input yields an empty canonical candidate and context."""
@@ -484,8 +532,8 @@ def test_candidate_intelligence_generates_stable_uuid5_ids() -> None:
     assert first.skills[0].skill_id != "skill_1"
 
 
-def test_candidate_intelligence_workflow_status_requires_review_for_conflicts() -> None:
-    """Conflicting scalar values require human review deterministically."""
+def test_candidate_intelligence_defers_cross_group_conflict_review() -> None:
+    """Cross-record conflict review waits for the duplicate detection stage."""
     result = CandidateIntelligenceAgent().process(
         [
             raw_record("github", payload={"profile": {"email": "github@example.com"}}),
@@ -497,10 +545,8 @@ def test_candidate_intelligence_workflow_status_requires_review_for_conflicts() 
         ]
     )
 
-    assert (
-        result.decision_context.workflow_status == WorkflowStatus.REQUIRES_HUMAN_REVIEW
-    )
-
+    assert result.decision_context.conflicting_fields == ()
+    assert result.decision_context.workflow_status == WorkflowStatus.INCOMPLETE_PROFILE
 
 def test_candidate_intelligence_workflow_status_marks_incomplete_profile() -> None:
     """Missing required observations mark the profile incomplete."""

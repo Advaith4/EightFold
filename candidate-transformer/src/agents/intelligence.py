@@ -6,7 +6,12 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from uuid import UUID, uuid5
 
-from src.agents.models import DecisionContext, IntelligenceResult, WorkflowStatus
+from src.agents.models import (
+    CandidateGroup,
+    DecisionContext,
+    IntelligenceResult,
+    WorkflowStatus,
+)
 from src.models import (
     AuditInformation,
     CanonicalCandidate,
@@ -94,12 +99,41 @@ class CandidateIntelligenceAgent:
         self._confidence_policy = confidence_policy or SourceConfidencePolicy()
 
     def process(self, raw_records: list[RawCandidateRecord]) -> IntelligenceResult:
-        """Produce one canonical candidate and an explainable decision context."""
-        return self._build_result(raw_records)
+        """Produce canonical candidates and explainable decision context."""
+        groups = self.group_records(raw_records)
+        if not groups:
+            return self._build_result([]).model_copy(
+                update={"candidate_groups": (), "canonical_candidates": ()}
+            )
+
+        group_results = [self._build_result(list(group.records)) for group in groups]
+        candidates = tuple(result.selected_candidate for result in group_results)
+        primary = group_results[0]
+        return primary.model_copy(
+            update={
+                "candidate_groups": tuple(groups),
+                "canonical_candidates": candidates,
+                "selected_candidate": candidates[0],
+                "canonical_candidate": candidates[0],
+            }
+        )
 
     def analyze(self, raw_records: list[RawCandidateRecord]) -> IntelligenceResult:
         """Backward-compatible orchestration entry point."""
         return self.process(raw_records)
+
+    def group_records(
+        self, raw_records: list[RawCandidateRecord]
+    ) -> list[CandidateGroup]:
+        """Create one compatibility group per raw record without deduplication."""
+        return [
+            CandidateGroup(
+                group_id=self._stable_id("group", record.record_id),
+                records=(record,),
+                match_keys=(f"record:{record.record_id}",),
+            )
+            for record in raw_records
+        ]
 
     def _build_result(
         self, raw_records: list[RawCandidateRecord]
@@ -124,8 +158,11 @@ class CandidateIntelligenceAgent:
             candidate=candidate,
         )
         return IntelligenceResult(
-            canonical_candidate=candidate,
             decision_context=context,
+            candidate_groups=(),
+            canonical_candidates=(candidate,),
+            selected_candidate=candidate,
+            canonical_candidate=candidate,
         )
 
     def _collect_evidence(
@@ -507,10 +544,13 @@ class CandidateIntelligenceAgent:
         seen: set[str] = set()
         for record in raw_records:
             raw_skills = self._list_value(record.payload.get("skills"))
-            for raw_skill in raw_skills:
-                name = self._skill_name(raw_skill)
-                if name is None:
-                    continue
+            skill_names = [
+                name
+                for raw_skill in raw_skills
+                if (name := self._skill_name(raw_skill))
+            ]
+            skill_names.extend(self._github_language_names(record))
+            for name in skill_names:
                 key = name.casefold()
                 if key in seen:
                     continue
@@ -525,6 +565,21 @@ class CandidateIntelligenceAgent:
                     )
                 )
         return skills
+
+    def _github_language_names(self, record: RawCandidateRecord) -> list[str]:
+        if self._source_label(record) != SourceType.GITHUB.value:
+            return []
+        languages = record.payload.get("languages")
+        if not isinstance(languages, dict):
+            return []
+        names: list[str] = []
+        for language_map in languages.values():
+            if not isinstance(language_map, dict):
+                continue
+            for language_name in language_map:
+                if isinstance(language_name, str) and language_name.strip():
+                    names.append(language_name)
+        return names
 
     def _build_education(
         self, raw_records: list[RawCandidateRecord]

@@ -3,6 +3,7 @@
 from src.agents.intake import CandidateArtifact, IntakeAgent
 from src.agents.intelligence import CandidateIntelligenceAgent, SourceConfidencePolicy
 from src.agents.models import (
+    CandidateGroup,
     DecisionContext,
     IntelligenceResult,
     PresentationResult,
@@ -14,6 +15,7 @@ from src.agents.presentation import PresentationAgent
 __all__ = [
     "AgentOrchestrator",
     "CandidateArtifact",
+    "CandidateGroup",
     "CandidateIntelligenceAgent",
     "DecisionContext",
     "IntakeAgent",

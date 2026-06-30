@@ -196,7 +196,8 @@ def test_resume_parser_date_normalization() -> None:
     assert normalize_date("Present") is None
     assert normalize_date("Current") is None
 
-    # testing the fallback mapping behavior (which normally happens inside _extract_experience/education)
+    # Test fallback mapping behavior, normally inside
+    # _extract_experience/_extract_education.
     assert normalize_date("May", fallback_year="2025") == "2025-05"
 
     # End-to-end range extraction tests

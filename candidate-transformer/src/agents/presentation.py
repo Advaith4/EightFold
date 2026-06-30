@@ -5,8 +5,10 @@ from __future__ import annotations
 import json
 
 from src.agents.models import (
+    CandidateGroup,
     CandidateHeader,
     CandidateOverview,
+    CandidatePresentation,
     ConfidenceSummary,
     DecisionContext,
     DecisionTimeline,
@@ -33,25 +35,109 @@ class PresentationAgent:
         """Create deterministic presentation artifacts from intelligence output."""
         if not isinstance(candidate_output, IntelligenceResult):
             raise TypeError("PresentationAgent requires an IntelligenceResult")
-        candidate = candidate_output.canonical_candidate
         context = candidate_output.decision_context
+        selected_candidate = candidate_output.selected_candidate
+        candidates = list(candidate_output.canonical_candidates) or [selected_candidate]
+        candidate_groups = list(candidate_output.candidate_groups)
+        presentations = [
+            self._build_candidate_presentation(candidate, context)
+            for candidate in candidates
+        ]
+        selected_presentation = self._selected_presentation(
+            presentations, selected_candidate.candidate_id
+        )
+        pipeline_summary = self._build_pipeline_summary(
+            candidate_count=len(candidates),
+            candidate_group_count=len(candidate_groups),
+            context=context,
+        )
+        processing_summary = self._build_processing_summary(
+            selected_candidate=selected_candidate,
+            candidates=candidates,
+            context=context,
+        )
 
         return PresentationResult(
+            candidates=candidates,
+            selected_candidate=selected_candidate,
+            candidate_groups=candidate_groups,
+            candidate_presentations=presentations,
+            pipeline_summary=pipeline_summary,
+            processing_summary=processing_summary,
+            header=selected_presentation.header,
+            overview=selected_presentation.overview,
+            confidence=selected_presentation.confidence,
+            provenance=selected_presentation.provenance,
+            decision_log=self._build_decision_log(context),
+            missing_fields=list(context.missing_important_fields),
+            conflicting_fields=list(context.conflicting_fields),
+            recruiter_projection=selected_presentation.recruiter_projection,
+            hr_projection=selected_presentation.hr_projection,
+            engineering_projection=selected_presentation.engineering_projection,
+            raw_json_dump=self._build_raw_json(
+                selected_candidate,
+                context,
+                candidates=candidates,
+                candidate_groups=candidate_groups,
+                pipeline_summary=pipeline_summary,
+                processing_summary=processing_summary,
+            ),
+        )
+
+    def _build_candidate_presentation(
+        self, candidate: CanonicalCandidate, context: DecisionContext
+    ) -> CandidatePresentation:
+        return CandidatePresentation(
+            candidate_id=candidate.candidate_id,
             header=self._build_header(candidate, context),
             overview=self._build_overview(candidate),
             confidence=self._build_confidence(candidate),
             provenance=self._build_provenance(candidate),
-            decision_log=self._build_decision_log(context),
-            missing_fields=list(context.missing_important_fields),
-            conflicting_fields=list(context.conflicting_fields),
             recruiter_projection=self._build_recruiter_projection(candidate, context),
             hr_projection=self._build_hr_projection(candidate, context),
             engineering_projection=self._build_engineering_projection(
                 candidate, context
             ),
-            raw_json_dump=self._build_raw_json(candidate, context),
         )
 
+    def _selected_presentation(
+        self, presentations: list[CandidatePresentation], candidate_id: str
+    ) -> CandidatePresentation:
+        for presentation in presentations:
+            if presentation.candidate_id == candidate_id:
+                return presentation
+        return presentations[0]
+
+    def _build_pipeline_summary(
+        self,
+        *,
+        candidate_count: int,
+        candidate_group_count: int,
+        context: DecisionContext,
+    ) -> dict[str, object]:
+        return {
+            "raw_record_count": context.record_count,
+            "candidate_group_count": candidate_group_count,
+            "canonical_candidate_count": candidate_count,
+            "selected_candidate_strategy": "first_candidate",
+            "workflow_status": context.workflow_status.value,
+        }
+
+    def _build_processing_summary(
+        self,
+        *,
+        selected_candidate: CanonicalCandidate,
+        candidates: list[CanonicalCandidate],
+        context: DecisionContext,
+    ) -> dict[str, object]:
+        return {
+            "selected_candidate_id": selected_candidate.candidate_id,
+            "candidate_ids": [candidate.candidate_id for candidate in candidates],
+            "sources": list(context.detected_sources),
+            "number_of_decisions": len(context.decision_log),
+            "missing_fields": list(context.missing_important_fields),
+            "conflicting_fields": list(context.conflicting_fields),
+        }
     def _format_workflow_status(self, status: WorkflowStatus) -> str:
         if status == WorkflowStatus.READY_FOR_PRESENTATION:
             return "Ready For Review"
@@ -213,7 +299,9 @@ class PresentationAgent:
             },
             skills=[skill.name for skill in candidate.skills],
             experience_summary=f"{len(candidate.experiences)} previous roles detected",
-            education_summary=f"{len(candidate.education)} educational credentials found",
+            education_summary=(
+                f"{len(candidate.education)} educational credentials found"
+            ),
             confidence=f"{int(candidate.confidence.score * 100)}%",
             missing_information=list(context.missing_important_fields),
         )
@@ -241,11 +329,26 @@ class PresentationAgent:
         )
 
     def _build_raw_json(
-        self, candidate: CanonicalCandidate, context: DecisionContext
+        self,
+        candidate: CanonicalCandidate,
+        context: DecisionContext,
+        *,
+        candidates: list[CanonicalCandidate],
+        candidate_groups: list[CandidateGroup],
+        pipeline_summary: dict[str, object],
+        processing_summary: dict[str, object],
     ) -> str:
-        # Detailed JSON dump including the full canonical candidate
-        data = candidate.model_dump(mode="json")
-        data["workflow_status"] = context.workflow_status.value
+        # Detailed JSON dump including the full presentation contract.
+        data = {
+            "selected_candidate": candidate.model_dump(mode="json"),
+            "candidates": [item.model_dump(mode="json") for item in candidates],
+            "candidate_groups": [
+                group.model_dump(mode="json") for group in candidate_groups
+            ],
+            "pipeline_summary": pipeline_summary,
+            "processing_summary": processing_summary,
+            "workflow_status": context.workflow_status.value,
+        }
 
         from typing import Any
 

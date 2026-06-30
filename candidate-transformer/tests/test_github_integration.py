@@ -9,16 +9,15 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request
 
 import pytest
-from src.exceptions import AdapterError, ValidationError
+from src.exceptions import AdapterError
+from src.github import GitHubAdapter, GitHubFetcher, GitHubPayload
 from src.github.exceptions import (
-    GitHubAPIException,
     GitHubNetworkException,
     GitHubRateLimitException,
     GitHubTimeoutException,
     GitHubUserNotFoundException,
     InvalidGitHubURLException,
 )
-from src.github import GitHubAdapter, GitHubFetcher, GitHubPayload
 from src.models import PayloadFormat, RawCandidateRecord
 from src.models.enums import SourceType
 
@@ -45,11 +44,13 @@ class FakeGitHubAPI:
     def __init__(self, responses: dict[str, object]) -> None:
         self.responses = responses
         self.paths: list[str] = []
+        self.authorization_headers: list[str | None] = []
 
     def __call__(self, request: Request, timeout: float) -> FakeResponse:
         del timeout
         path = request.full_url.removeprefix("https://api.github.com")
         self.paths.append(path)
+        self.authorization_headers.append(request.get_header("Authorization"))
         response = self.responses[path]
         if isinstance(response, Exception):
             raise response
@@ -97,6 +98,19 @@ def repository() -> dict[str, Any]:
         "fork": False,
         "archived": False,
     }
+
+
+def test_github_fetcher_uses_github_token_authorization_header(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Configured GitHub tokens are sent as bearer auth without changing payloads."""
+    monkeypatch.setenv("GITHUB_TOKEN", "test-token")
+    api = FakeGitHubAPI(github_responses(repositories=[]))
+
+    payload = GitHubFetcher(opener=api).fetch("https://github.com/octocat")
+
+    assert payload.profile["login"] == "octocat"
+    assert api.authorization_headers == ["Bearer test-token", "Bearer test-token"]
 
 
 def test_github_fetcher_fetches_profile_repositories_and_languages() -> None:

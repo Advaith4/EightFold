@@ -6,7 +6,7 @@ from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.models import CanonicalCandidate
+from src.models import CanonicalCandidate, RawCandidateRecord
 
 
 class WorkflowStatus(str, Enum):  # noqa: UP042
@@ -34,13 +34,26 @@ class DecisionContext(BaseModel):
     decision_log: tuple[str, ...]
 
 
-class IntelligenceResult(BaseModel):
-    """Canonical candidate and reasoning context produced by intelligence."""
+class CandidateGroup(BaseModel):
+    """Deterministic cluster of raw records believed to represent one candidate."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    canonical_candidate: CanonicalCandidate
+    group_id: str
+    records: tuple[RawCandidateRecord, ...]
+    match_keys: tuple[str, ...]
+
+
+class IntelligenceResult(BaseModel):
+    """Canonical candidates and reasoning context produced by intelligence."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
     decision_context: DecisionContext
+    candidate_groups: tuple[CandidateGroup, ...] = ()
+    canonical_candidates: tuple[CanonicalCandidate, ...] = ()
+    selected_candidate: CanonicalCandidate
+    canonical_candidate: CanonicalCandidate
 
 
 # ==============================================================================
@@ -134,11 +147,28 @@ class EngineeringProjection(BaseModel):
     processing_summary: str
 
 
+class CandidatePresentation(BaseModel):
+    candidate_id: str
+    header: CandidateHeader
+    overview: CandidateOverview
+    confidence: ConfidenceSummary
+    provenance: list[ProvenanceRow]
+    recruiter_projection: RecruiterProjection
+    hr_projection: HRProjection
+    engineering_projection: EngineeringProjection
+
+
 class PresentationResult(BaseModel):
     """Clean View Model for UI rendering without backend logic."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
+    candidates: list[CanonicalCandidate]
+    selected_candidate: CanonicalCandidate
+    candidate_groups: list[CandidateGroup]
+    candidate_presentations: list[CandidatePresentation]
+    pipeline_summary: dict[str, object]
+    processing_summary: dict[str, object]
     header: CandidateHeader
     overview: CandidateOverview
     confidence: ConfidenceSummary

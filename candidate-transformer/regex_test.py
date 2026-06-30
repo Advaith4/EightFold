@@ -58,8 +58,16 @@ def normalize_date(
     return year
 
 
-MONTH_REGEX = r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?|Spring|Summer|Fall|Winter)"
-DATE_RANGE_PATTERN = f"({MONTH_REGEX}\\s+\\d{{4}}|\\d{{4}}|{MONTH_REGEX})\\s*(?:-|to|–|—)\\s*({MONTH_REGEX}\\s+\\d{{4}}|\\d{{4}}|Present|Current)"
+MONTH_REGEX = (
+    r"(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?"
+    r"|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?"
+    r"|Nov(?:ember)?|Dec(?:ember)?|Spring|Summer|Fall|Winter)"
+)
+DATE_RANGE_PATTERN = (
+    f"({MONTH_REGEX}\\s+\\d{{4}}|\\d{{4}}|{MONTH_REGEX})"
+    f"\\s*(?:-|to|–|—)\\s*"
+    f"({MONTH_REGEX}\\s+\\d{{4}}|\\d{{4}}|Present|Current)"
+)
 DATE_PATTERN = f"(?:{MONTH_REGEX}\\s+)?\\d{{4}}"
 
 test_cases = [
