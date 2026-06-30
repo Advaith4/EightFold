@@ -26,13 +26,17 @@ class PipelineStage(str, Enum):  # noqa: UP042
 
 
 class SourceType(str, Enum):  # noqa: UP042
-    """Future source type identifiers."""
+    """Source type identifiers used by infrastructure pipeline stages."""
 
     CSV = "CSV"
     ATS = "ATS"
+    ATS_JSON = "ATS_JSON"
     RESUME = "Resume"
+    RECRUITER_CSV = "RECRUITER_CSV"
     GITHUB = "GitHub"
+    GITHUB_PROFILE = "GITHUB_PROFILE"
     LINKEDIN = "LinkedIn"
+    UNKNOWN = "UNKNOWN"
 
 
 class LogLevel(str, Enum):  # noqa: UP042
