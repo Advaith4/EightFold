@@ -12,13 +12,16 @@ from src.agents import (
     CandidateIntelligenceAgent,
     DecisionContext,
     IntakeAgent,
+    IntelligenceResult,
     PresentationAgent,
+    SourceConfidencePolicy,
+    WorkflowStatus,
 )
 from src.enums import SourceType as InfrastructureSourceType
 from src.github import GitHubAdapter, GitHubFetcher, GitHubPayload
 from src.interfaces import BaseAdapter
 from src.loaders import FileMetadata, FilePayload
-from src.models import PayloadFormat, RawCandidateRecord
+from src.models import CanonicalCandidate, PayloadFormat, RawCandidateRecord
 from src.models.base import JsonValue
 from src.models.enums import SourceType as DomainSourceType
 
@@ -41,6 +44,11 @@ def raw_record(
         raw_text=raw_text,
         checksum=f"sha256:{record_id}",
     )
+
+
+def intelligence_result(record: RawCandidateRecord | None = None) -> IntelligenceResult:
+    """Create a real intelligence result for orchestration doubles."""
+    return CandidateIntelligenceAgent().process([record or raw_record("intake")])
 
 
 class FakeGitHubFetcher(GitHubFetcher):
@@ -102,16 +110,9 @@ class RecordingIntelligenceAgent(CandidateIntelligenceAgent):
     def __init__(self) -> None:
         self.received: list[RawCandidateRecord] | None = None
 
-    def analyze(self, raw_records: list[RawCandidateRecord]) -> DecisionContext:
+    def analyze(self, raw_records: list[RawCandidateRecord]) -> IntelligenceResult:
         self.received = raw_records
-        return DecisionContext(
-            record_count=len(raw_records),
-            detected_sources=("test",),
-            duplicate_sources=(),
-            missing_important_fields=(),
-            available_fields_by_source={"test": ("record_id",)},
-            decision_log=("test context",),
-        )
+        return intelligence_result(raw_records[0])
 
 
 class RecordingPresentationAgent(PresentationAgent):
@@ -126,7 +127,7 @@ class RecordingPresentationAgent(PresentationAgent):
 
 
 def test_agents_construct_with_default_dependencies() -> None:
-    """Sprint 6.0 agents expose clean public constructors."""
+    """Agents expose clean public constructors."""
     assert isinstance(IntakeAgent(), IntakeAgent)
     assert isinstance(CandidateIntelligenceAgent(), CandidateIntelligenceAgent)
     assert isinstance(PresentationAgent(), PresentationAgent)
@@ -167,59 +168,208 @@ def test_intake_agent_routes_loaded_payload_to_registered_adapter() -> None:
     assert [record.record_id for record in records] == ["file"]
 
 
-def test_candidate_intelligence_agent_analyzes_single_source() -> None:
-    """Single-source analysis reports source, count, fields, and missing data."""
-    context = CandidateIntelligenceAgent().analyze(
+def test_candidate_intelligence_process_returns_canonical_and_context() -> None:
+    """Sprint 7.0 returns a canonical candidate plus updated decision context."""
+    result = CandidateIntelligenceAgent().process(
         [
             raw_record(
                 "github",
                 payload={
-                    "profile": {"login": "octocat"},
+                    "profile": {
+                        "login": "octocat",
+                        "name": "The Octocat",
+                        "bio": "GitHub mascot",
+                        "email": "octocat@example.com",
+                        "html_url": "https://github.com/octocat",
+                    },
                     "repositories": [],
-                    "languages": {},
+                    "languages": {"Python": 100},
                 },
             )
         ]
     )
 
-    assert isinstance(context, DecisionContext)
-    assert context.record_count == 1
-    assert context.detected_sources == ("GitHub",)
-    assert context.duplicate_sources == ()
-    assert context.available_fields_by_source["GitHub"] == (
-        "languages",
-        "profile",
-        "repositories",
-    )
-    assert "certifications" in context.missing_important_fields
+    assert isinstance(result, IntelligenceResult)
+    assert isinstance(result.canonical_candidate, CanonicalCandidate)
+    assert isinstance(result.decision_context, DecisionContext)
+    assert result.canonical_candidate.identity.full_name == "The Octocat"
+    assert result.canonical_candidate.summary == "GitHub mascot"
+    assert result.canonical_candidate.contact_info.emails == ["octocat@example.com"]
+    assert result.canonical_candidate.skills == []
 
 
-def test_candidate_intelligence_agent_analyzes_multiple_sources() -> None:
-    """Multiple-source analysis preserves source order and field observations."""
-    context = CandidateIntelligenceAgent().analyze(
+def test_candidate_intelligence_maps_single_resume_source() -> None:
+    """Resume-only candidates map explicit fields without inference."""
+    result = CandidateIntelligenceAgent().process(
         [
-            raw_record("github", payload={"profile": {}, "repositories": []}),
             raw_record(
                 "resume",
                 source_type=DomainSourceType.RESUME,
-                payload={"email": "ada@example.com", "phone": "+15551234567"},
-                raw_text="Ada Lovelace",
+                payload={
+                    "full_name": "Ada Lovelace",
+                    "email": "ada@example.com",
+                    "phone": "+15551234567",
+                    "skills": ["Python"],
+                    "education": [{"institution": "University", "degree": "BS"}],
+                    "experience": [{"title": "Engineer", "company": "Analytical"}],
+                },
+            )
+        ]
+    )
+    candidate = result.canonical_candidate
+
+    assert candidate.identity.full_name == "Ada Lovelace"
+    assert candidate.contact_info.preferred_email == "ada@example.com"
+    assert candidate.contact_info.preferred_phone == "+15551234567"
+    assert [skill.name for skill in candidate.skills] == ["Python"]
+    assert candidate.education[0].institution == "University"
+    assert candidate.experiences[0].organization == "Analytical"
+    assert candidate.confidence.score == 0.85
+
+
+@pytest.mark.parametrize(
+    ("sources", "expected_score"),
+    [
+        ((DomainSourceType.ATS,), 0.95),
+        ((DomainSourceType.RESUME,), 0.85),
+        ((DomainSourceType.GITHUB,), 0.80),
+        ((DomainSourceType.RESUME, DomainSourceType.ATS), 0.95),
+        ((DomainSourceType.RESUME, DomainSourceType.GITHUB), 0.85),
+        ((DomainSourceType.ATS, DomainSourceType.GITHUB), 0.95),
+        (
+            (DomainSourceType.RESUME, DomainSourceType.ATS, DomainSourceType.GITHUB),
+            0.95,
+        ),
+    ],
+)
+def test_candidate_intelligence_assigns_deterministic_confidence(
+    sources: tuple[DomainSourceType, ...], expected_score: float
+) -> None:
+    """Confidence comes from the configurable source reliability policy."""
+    records = [
+        raw_record(
+            f"record-{index}",
+            source_type=source,
+            payload={"email": f"candidate{index}@example.com"},
+        )
+        for index, source in enumerate(sources)
+    ]
+
+    result = CandidateIntelligenceAgent().process(records)
+
+    assert result.canonical_candidate.confidence.score == expected_score
+    assert (
+        result.canonical_candidate.confidence.method
+        == "deterministic_source_precedence"
+    )
+
+
+def test_candidate_intelligence_accepts_replaceable_confidence_policy() -> None:
+    """Confidence values are centralized in a replaceable policy object."""
+    policy = SourceConfidencePolicy(
+        source_scores=((DomainSourceType.RESUME.value, 0.42),),
+        default_score=0.10,
+        method="test_policy",
+    )
+    result = CandidateIntelligenceAgent(confidence_policy=policy).process(
+        [
+            raw_record(
+                "resume",
+                source_type=DomainSourceType.RESUME,
+                payload={"email": "ada@example.com"},
+            )
+        ]
+    )
+
+    assert result.canonical_candidate.confidence.score == 0.42
+    assert result.canonical_candidate.confidence.method == "test_policy"
+
+
+def test_candidate_intelligence_prefers_ats_over_resume_and_github() -> None:
+    """Scalar conflicts use ATS > Resume > GitHub precedence."""
+    result = CandidateIntelligenceAgent().process(
+        [
+            raw_record(
+                "github",
+                payload={"profile": {"email": "github@example.com"}},
+            ),
+            raw_record(
+                "resume",
+                source_type=DomainSourceType.RESUME,
+                payload={"email": "resume@example.com"},
+            ),
+            raw_record(
+                "ats",
+                source_type=DomainSourceType.ATS,
+                payload={"email": "ats@example.com"},
             ),
         ]
     )
 
-    assert context.record_count == 2
-    assert context.detected_sources == ("GitHub", "Resume")
-    assert context.available_fields_by_source["Resume"] == (
-        "email",
-        "phone",
-        "raw_text",
+    candidate = result.canonical_candidate
+    assert candidate.contact_info.preferred_email == "ats@example.com"
+    assert candidate.contact_info.emails == [
+        "github@example.com",
+        "resume@example.com",
+        "ats@example.com",
+    ]
+    assert "contact_info.preferred_email" in result.decision_context.conflicting_fields
+    email_decision = next(
+        log
+        for log in candidate.decision_logs
+        if log.field_path == "contact_info.preferred_email"
+    )
+    assert email_decision.selected_value == "ats@example.com"
+    assert email_decision.rejected_values == [
+        "github@example.com",
+        "resume@example.com",
+    ]
+    assert email_decision.rule_id == "source_precedence_v1"
+
+
+def test_candidate_intelligence_equal_priority_keeps_first_value() -> None:
+    """Equal source priority keeps the first encountered explicit value."""
+    result = CandidateIntelligenceAgent().process(
+        [
+            raw_record(
+                "resume-1",
+                source_type=DomainSourceType.RESUME,
+                payload={"phone": "+10000000001"},
+            ),
+            raw_record(
+                "resume-2",
+                source_type=DomainSourceType.RESUME,
+                payload={"phone": "+10000000002"},
+            ),
+        ]
     )
 
+    assert result.canonical_candidate.contact_info.preferred_phone == "+10000000001"
+    assert "contact_info.preferred_phone" in result.decision_context.conflicting_fields
 
-def test_candidate_intelligence_agent_reports_missing_important_fields() -> None:
-    """Missing important fields are deterministic observations only."""
-    context = CandidateIntelligenceAgent().analyze(
+
+def test_candidate_intelligence_tracks_provenance_for_populated_fields() -> None:
+    """Canonical fields retain provenance back to raw records."""
+    result = CandidateIntelligenceAgent().process(
+        [
+            raw_record(
+                "resume",
+                source_type=DomainSourceType.RESUME,
+                payload={"full_name": "Ada Lovelace", "email": "ada@example.com"},
+            )
+        ]
+    )
+    candidate = result.canonical_candidate
+
+    assert candidate.provenance
+    assert candidate.identity.provenance[0].raw_record_id == "resume"
+    assert candidate.contact_info.provenance[0].source_field == "email"
+    assert candidate.decision_logs[0].provenance_ids
+
+
+def test_candidate_intelligence_reports_missing_fields() -> None:
+    """Missing important fields are reported in DecisionContext."""
+    result = CandidateIntelligenceAgent().process(
         [
             raw_record(
                 "resume",
@@ -229,7 +379,8 @@ def test_candidate_intelligence_agent_reports_missing_important_fields() -> None
         ]
     )
 
-    assert context.missing_important_fields == (
+    assert result.decision_context.missing_important_fields == (
+        "full_name",
         "phone",
         "education",
         "experience",
@@ -238,50 +389,147 @@ def test_candidate_intelligence_agent_reports_missing_important_fields() -> None
     )
 
 
-def test_candidate_intelligence_agent_detects_duplicate_sources() -> None:
-    """Duplicate source labels are reported without merge decisions."""
-    context = CandidateIntelligenceAgent().analyze(
-        [raw_record("github-1"), raw_record("github-2")]
+def test_candidate_intelligence_detects_duplicate_sources_and_records() -> None:
+    """Duplicate source and record observations remain explicit."""
+    result = CandidateIntelligenceAgent().process(
+        [
+            raw_record("same", payload={"email": "one@example.com"}),
+            raw_record("same", payload={"email": "two@example.com"}),
+        ]
     )
 
-    assert context.record_count == 2
-    assert context.detected_sources == ("GitHub",)
-    assert context.duplicate_sources == ("GitHub",)
-    assert "Duplicate sources detected: GitHub" in context.decision_log
+    assert result.decision_context.duplicate_sources == ("GitHub",)
+    assert result.decision_context.duplicate_record_ids == ("same",)
+    assert "Duplicate records detected: same" in result.decision_context.decision_log
 
 
-def test_candidate_intelligence_agent_handles_empty_input() -> None:
-    """Empty input yields an explainable empty decision context."""
-    context = CandidateIntelligenceAgent().analyze([])
+def test_candidate_intelligence_handles_empty_input() -> None:
+    """Empty input yields an empty canonical candidate and context."""
+    result = CandidateIntelligenceAgent().process([])
 
-    assert context.record_count == 0
-    assert context.detected_sources == ()
-    assert context.duplicate_sources == ()
-    assert context.available_fields_by_source == {}
-    assert context.decision_log == (
+    assert result.canonical_candidate.candidate_id.startswith("candidate_")
+    assert result.canonical_candidate.audit_information is not None
+    assert result.canonical_candidate.audit_information.raw_record_count == 0
+    assert result.decision_context.record_count == 0
+    assert result.decision_context.decision_log == (
         "Received 0 candidate records.",
         "No sources detected.",
+        "Workflow status: INCOMPLETE_PROFILE.",
         "No conflicts analyzed yet.",
     )
 
 
-def test_candidate_intelligence_agent_generates_decision_log() -> None:
-    """Decision log contains observations and avoids conflict resolution."""
-    context = CandidateIntelligenceAgent().analyze(
-        [raw_record("github", payload={"profile": {}, "languages": {}})]
+def test_candidate_intelligence_generates_structured_decision_log() -> None:
+    """Decision logs are audit artifacts, not hidden reasoning."""
+    result = CandidateIntelligenceAgent().process(
+        [raw_record("github", payload={"profile": {"name": "The Octocat"}})]
     )
 
-    assert "Received sources: GitHub" in context.decision_log
-    assert "GitHub contains: languages, profile." in context.decision_log
-    assert context.decision_log[-1] == "No conflicts analyzed yet."
+    decision = result.canonical_candidate.decision_logs[0]
+    assert decision.field_path == "identity.full_name"
+    assert decision.selected_value == "The Octocat"
+    assert "Observation: full_name present in GitHub." in decision.reason
+    assert "Reason: Single explicit value detected." in decision.reason
+    assert "Rule Applied:" in decision.reason
+    assert "Decision: Selected GitHub value." in decision.reason
+    assert "Affected Field: full_name." in decision.reason
+    assert "Structured decisions generated: 1." in result.decision_context.decision_log
 
 
 def test_decision_context_is_immutable() -> None:
     """DecisionContext is stable for later orchestration stages."""
-    context = CandidateIntelligenceAgent().analyze([])
+    context = CandidateIntelligenceAgent().process([]).decision_context
 
     with pytest.raises(PydanticValidationError):
         context.record_count = 1
+
+
+def test_candidate_intelligence_generates_stable_uuid5_ids() -> None:
+    """Stable IDs repeat for identical inputs and do not depend on list indexes."""
+    record = raw_record(
+        "resume",
+        source_type=DomainSourceType.RESUME,
+        payload={
+            "full_name": "Ada Lovelace",
+            "email": "ada@example.com",
+            "skills": ["Python"],
+            "education": [{"institution": "University", "degree": "BS"}],
+            "experience": [{"title": "Engineer", "company": "Analytical"}],
+        },
+    )
+
+    first = CandidateIntelligenceAgent().process([record]).canonical_candidate
+    second = CandidateIntelligenceAgent().process([record]).canonical_candidate
+
+    assert first.candidate_id == second.candidate_id
+    assert first.skills[0].skill_id == second.skills[0].skill_id
+    assert first.education[0].education_id == second.education[0].education_id
+    assert first.experiences[0].experience_id == second.experiences[0].experience_id
+    assert first.candidate_id.startswith("candidate_")
+    assert first.skills[0].skill_id.startswith("skill_")
+    assert first.skills[0].skill_id != "skill_1"
+
+
+def test_candidate_intelligence_workflow_status_requires_review_for_conflicts() -> None:
+    """Conflicting scalar values require human review deterministically."""
+    result = CandidateIntelligenceAgent().process(
+        [
+            raw_record("github", payload={"profile": {"email": "github@example.com"}}),
+            raw_record(
+                "resume",
+                source_type=DomainSourceType.RESUME,
+                payload={"email": "resume@example.com"},
+            ),
+        ]
+    )
+
+    assert (
+        result.decision_context.workflow_status == WorkflowStatus.REQUIRES_HUMAN_REVIEW
+    )
+
+
+def test_candidate_intelligence_workflow_status_marks_incomplete_profile() -> None:
+    """Missing required observations mark the profile incomplete."""
+    result = CandidateIntelligenceAgent().process(
+        [
+            raw_record(
+                "resume",
+                source_type=DomainSourceType.RESUME,
+                payload={"email": "a@b.co"},
+            )
+        ]
+    )
+
+    assert result.decision_context.workflow_status == WorkflowStatus.INCOMPLETE_PROFILE
+
+
+def test_candidate_intelligence_workflow_status_ready_for_complete_profile() -> None:
+    """Complete, non-conflicting observations are ready for presentation."""
+    result = CandidateIntelligenceAgent().process(
+        [
+            raw_record(
+                "ats",
+                source_type=DomainSourceType.ATS,
+                payload={
+                    "full_name": "Ada Lovelace",
+                    "email": "ada@example.com",
+                    "phone": "+15551234567",
+                    "skills": ["Python"],
+                    "education": [{"institution": "University", "degree": "BS"}],
+                    "experience": [{"title": "Engineer", "company": "Analytical"}],
+                    "certifications": ["Example Cert"],
+                },
+            )
+        ]
+    )
+
+    assert (
+        result.decision_context.workflow_status == WorkflowStatus.READY_FOR_PRESENTATION
+    )
+    assert (
+        "Workflow status: READY_FOR_PRESENTATION."
+        in result.decision_context.decision_log
+    )
 
 
 def test_presentation_agent_returns_supplied_object_unchanged() -> None:
@@ -307,5 +555,5 @@ def test_agent_orchestrator_coordinates_agent_execution_flow() -> None:
     assert intake_agent.received == ["artifact"]
     assert intelligence_agent.received is not None
     assert [record.record_id for record in intelligence_agent.received] == ["intake"]
-    assert isinstance(presentation_agent.received, DecisionContext)
+    assert isinstance(presentation_agent.received, IntelligenceResult)
     assert result == {"presented": presentation_agent.received}
