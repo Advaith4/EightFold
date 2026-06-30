@@ -1,53 +1,77 @@
 # Candidate Intelligence Transformation Engine
 
+A deterministic candidate intelligence pipeline that ingests heterogeneous candidate data, groups duplicate records, builds canonical candidate profiles, and produces explainable presentation-ready JSON output.
+
+
+## Quick Start
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+python -m pytest
+streamlit run app.py
+```
+
+On macOS/Linux, activate the virtual environment with:
+
+```bash
+source .venv/bin/activate
+```
+
+## Environment Variables
+
+Create a local `.env` file from the example file:
+
+```bash
+copy .env.example .env
+```
+
+Use placeholders like this. Do not commit real API keys.
+
+```env
+APP_ENV=local
+CONFIG_PATH=config/default.yaml
+LOGGING_CONFIG_PATH=config/logging.yaml
+GITHUB_TOKEN=your_github_fine_grained_token_here
+OPENAI_API_KEY=your_optional_api_key_placeholder_here
+```
+
+Notes:
+
+- `GITHUB_TOKEN` is optional, but recommended for higher GitHub REST API rate limits.
+- `.env` is ignored by Git and must stay local.
+
 ## Project Overview
 
-The Candidate Intelligence Transformation Engine transforms candidate information from multiple heterogeneous sources into canonical, explainable candidate profiles. It supports resume files, ATS JSON, recruiter CSV rows, and GitHub profile URLs, then performs deterministic ingestion, duplicate detection, canonical profile generation, confidence scoring, provenance tracking, projection, and validation-oriented presentation.
-
-The repository is prepared for Eightfold assignment review and includes sample inputs, generated output JSON artifacts, tests, and a Streamlit demo application.
+The engine transforms candidate data from resumes, ATS exports, recruiter CSV files, and GitHub profiles into canonical, explainable candidate records. It focuses on deterministic processing rather than AI inference, so every grouping and transformation decision is reproducible and auditable.
 
 ## Architecture Overview
 
 ```text
 Adapters
-  ↓
-Duplicate Detection
-  ↓
-Canonical Candidate
-  ↓
-Merge
-  ↓
-Confidence
-  ↓
-Projection
-  ↓
-Validation
-  ↓
-Output
+  -> Duplicate Detection
+  -> Canonical Candidate
+  -> Merge
+  -> Confidence
+  -> Projection
+  -> Validation
+  -> Output
 ```
 
 Runtime flow:
 
 ```text
-Streamlit / Service API
-  ↓
-CandidateProcessingService
-  ↓
-IntakeAgent
-  ↓
-RawCandidateRecord[]
-  ↓
-DuplicateDetectionAgent
-  ↓
-CandidateGroup[]
-  ↓
-CandidateIntelligenceAgent
-  ↓
-CanonicalCandidate[]
-  ↓
-PresentationAgent
-  ↓
-PresentationResult / JSON Output
+Streamlit UI / Service API
+  -> CandidateProcessingService
+  -> IntakeAgent
+  -> RawCandidateRecord[]
+  -> DuplicateDetectionAgent
+  -> CandidateGroup[]
+  -> CandidateIntelligenceAgent
+  -> CanonicalCandidate[]
+  -> PresentationAgent
+  -> PresentationResult / JSON Output
 ```
 
 ## Supported Input Sources
@@ -56,7 +80,7 @@ PresentationResult / JSON Output
 - Resume DOCX
 - ATS JSON object or array
 - Recruiter CSV with one candidate per row
-- GitHub profile URL, one URL per line in the UI
+- GitHub profile URLs, one URL per line in the UI
 
 ## Features
 
@@ -66,34 +90,87 @@ PresentationResult / JSON Output
 - Canonical profile generation
 - Provenance tracking
 - Confidence scoring
-- Runtime configurable JSON projection
+- Runtime-configurable JSON projection
 - Presentation validation warnings
-- Streamlit-based review UI
+- Streamlit review UI
 - Partial failure handling for invalid individual inputs
+
+## Implementation Screenshots
+
+### Main Streamlit UI
+
+![Main Streamlit UI](docs/screenshots/ui-overview.png)
+
+### Sample Input Uploads
+
+![Sample Input Uploads](docs/screenshots/sample-input.png)
+
+### Successful Processing
+
+![Successful Processing](docs/screenshots/process-successful.png)
+
+### Pipeline Overview
+
+![Pipeline Overview](docs/screenshots/pipeline-overview.png)
+
+### Decision Pipeline
+
+![Decision Pipeline](docs/screenshots/decision-pipeline.png)
+
+### Duplicate Detection
+
+![Duplicate Detection](docs/screenshots/duplicate-detection.png)
+
+### Candidate Selection
+
+![Candidate Selection](docs/screenshots/candidate-selection.png)
+
+### Candidate Profile
+
+![Candidate Profile](docs/screenshots/candidate-profile.png)
+
+### Confidence View
+
+![Confidence View](docs/screenshots/confidence.png)
+
+### Provenance View
+
+![Provenance View](docs/screenshots/provenance.png)
+
+### Recruiter View
+
+![Recruiter View](docs/screenshots/recruiter-view.png)
+
+### JSON Output
+
+![JSON Output](docs/screenshots/json-output.png)
 
 ## Repository Structure
 
 ```text
 candidate-transformer/
-├── app.py
-├── requirements.txt
-├── pyproject.toml
-├── README.md
-├── config/
-├── docs/
-├── sample_inputs/
-├── output/
-├── src/
-│   ├── adapters/
-│   ├── agents/
-│   ├── detection/
-│   ├── github/
-│   ├── loaders/
-│   ├── models/
-│   ├── pipeline/
-│   ├── services/
-│   └── ui/
-└── tests/
+|-- app.py
+|-- requirements.txt
+|-- pyproject.toml
+|-- README.md
+|-- config/
+|-- docs/
+|   |-- adr/
+|   |-- screenshots/
+|   `-- application_scope.md
+|-- sample_inputs/
+|-- output/
+|-- src/
+|   |-- adapters/
+|   |-- agents/
+|   |-- detection/
+|   |-- github/
+|   |-- loaders/
+|   |-- models/
+|   |-- pipeline/
+|   |-- services/
+|   `-- ui/
+`-- tests/
 ```
 
 ## Installation
@@ -104,21 +181,20 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-On macOS/Linux, activate with:
-
-```bash
-source .venv/bin/activate
-```
-
-## Running The Project
+## Running The Application
 
 ```bash
 streamlit run app.py
 ```
 
-The sidebar accepts resume files, ATS JSON files, recruiter CSV files, and GitHub profile URLs.
+The sidebar accepts:
 
-## Running Tests
+- Multiple resume files
+- Multiple ATS JSON files
+- Multiple recruiter CSV files
+- Multiple GitHub profile URLs, one per line
+
+## Running Quality Checks
 
 ```bash
 python -m pytest
@@ -126,11 +202,16 @@ python -m ruff check .
 python -m mypy src tests app.py
 ```
 
-Black formatting is configured in `pyproject.toml`; it is optional for final validation in this repository state.
+Current validation status:
 
-## Sample Datasets
+- `pytest`: 205 passed
+- `ruff`: passing
+- `mypy`: passing
+- Streamlit startup: verified locally
 
-Sample data lives in `sample_inputs/` and is copied from the existing deterministic demo datasets:
+## Sample Inputs
+
+Sample data lives in `sample_inputs/`:
 
 - `tarun_resume.pdf`
 - `tarun_resume.txt`
@@ -139,7 +220,7 @@ Sample data lives in `sample_inputs/` and is copied from the existing determinis
 - `arjun_ats.json`
 - `arjun_recruiter.csv`
 
-GitHub live fetching is supported through public GitHub profile URLs. A token may be supplied locally through `.env` as `GITHUB_TOKEN`, but `.env` is ignored and must not be committed.
+These are deterministic local datasets for reviewer testing. GitHub live fetching is supported separately through public GitHub profile URLs.
 
 ## Output JSON Files
 
@@ -148,7 +229,11 @@ Generated pipeline artifacts live in `output/`:
 - `output/default_output.json`: full `PresentationResult` generated by the service pipeline.
 - `output/custom_output.json`: runtime-configured projection generated from canonical candidates.
 
-These files are generated from the actual application pipeline, not hand-authored.
+These output files are generated by the actual pipeline and are included for submission review.
+
+## Regenerating Output Artifacts
+
+The committed output files were generated from the service pipeline using `sample_inputs/`. To regenerate them, run the application or call `CandidateProcessingService` from a short script using the sample files.
 
 ## Edge Cases Handled
 
@@ -170,15 +255,25 @@ These files are generated from the actual application pipeline, not hand-authore
 - LinkedIn, databases, exports to PDF/DOCX, and production authentication are out of scope.
 - GitHub API rate limits may apply without a local `GITHUB_TOKEN`.
 
+## Submission Checklist
+
+- Repository contains only required source, docs, tests, sample inputs, outputs, and screenshots.
+- Local `.env`, logs, caches, and virtual environments are ignored.
+- `requirements.txt` supports clone-and-run setup.
+- `sample_inputs/` contains deterministic demo files.
+- `output/` contains generated JSON artifacts.
+- README includes setup instructions, API key placeholders, screenshots, and quality commands.
+- Tests, lint, and type checks pass.
+
 ## Future Improvements
 
-- Candidate switching in the Streamlit UI
+- Candidate switching improvements in the Streamlit UI
 - Richer field-level provenance presentation
 - Expanded validation reporting
 - Configurable source priority policies
 - Optional persistent GitHub response cache
 - API server wrapper around the service layer
 
-## Demo Video Placeholder
+## Demo Video 
 
-Demo video link: _to be added before final submission_.
+Demo video link: .

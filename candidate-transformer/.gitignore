@@ -20,7 +20,3 @@ build/
 *.tmp
 logs/*.log
 logs/*.zip
-outputs/*
-!outputs/.gitkeep
-inputs/*
-!inputs/.gitkeep
