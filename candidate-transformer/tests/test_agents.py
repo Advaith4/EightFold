@@ -14,6 +14,7 @@ from src.agents import (
     IntakeAgent,
     IntelligenceResult,
     PresentationAgent,
+    PresentationResult,
     SourceConfidencePolicy,
     WorkflowStatus,
 )
@@ -121,9 +122,9 @@ class RecordingPresentationAgent(PresentationAgent):
     def __init__(self) -> None:
         self.received: object | None = None
 
-    def present(self, candidate_output: object) -> object:
+    def present(self, candidate_output: object) -> PresentationResult:
         self.received = candidate_output
-        return {"presented": candidate_output}
+        return super().present(candidate_output)
 
 
 def test_agents_construct_with_default_dependencies() -> None:
@@ -532,11 +533,130 @@ def test_candidate_intelligence_workflow_status_ready_for_complete_profile() -> 
     )
 
 
-def test_presentation_agent_returns_supplied_object_unchanged() -> None:
-    """Presentation shell performs no projection or validation this sprint."""
-    value = {"candidate": "future"}
+def _complete_intelligence_result() -> IntelligenceResult:
+    """Create a complete deterministic candidate for presentation tests."""
+    return CandidateIntelligenceAgent().process(
+        [
+            raw_record(
+                "ats",
+                source_type=DomainSourceType.ATS,
+                payload={
+                    "full_name": "Ada Lovelace",
+                    "email": "ada@example.com",
+                    "phone": "+15551234567",
+                    "location": "London",
+                    "summary": "Computing pioneer",
+                    "skills": ["Python"],
+                    "education": [{"institution": "University", "degree": "BS"}],
+                    "experience": [{"title": "Engineer", "company": "Analytical"}],
+                    "certifications": ["Example Cert"],
+                },
+            )
+        ]
+    )
 
-    assert PresentationAgent().present(value) is value
+
+def test_presentation_agent_builds_recruiter_projection() -> None:
+    """Recruiter view presents concise candidate and readiness information."""
+    result = PresentationAgent().present(_complete_intelligence_result())
+    recruiter = result.projections["recruiter"]
+
+    assert recruiter["full_name"] == "Ada Lovelace"
+    assert recruiter["email"] == "ada@example.com"
+    assert recruiter["phone"] == "+15551234567"
+    assert recruiter["skills"] == ["Python"]
+    assert recruiter["experience_count"] == 1
+    assert recruiter["education_count"] == 1
+
+
+def test_presentation_agent_builds_hr_projection() -> None:
+    """HR view presents contact, source, education, and experience details."""
+    result = PresentationAgent().present(_complete_intelligence_result())
+    hr_view = result.projections["hr"]
+
+    assert hr_view["sources"] == ["ATS"]
+    assert hr_view["education"] == [
+        {
+            "institution": "University",
+            "credential": "BS",
+            "field_of_study": None,
+        }
+    ]
+    assert hr_view["experience"] == [
+        {"title": "Engineer", "organization": "Analytical", "is_current": False}
+    ]
+
+
+def test_presentation_agent_builds_engineering_projection() -> None:
+    """Engineering view presents explicit technical evidence without inference."""
+    intelligence = CandidateIntelligenceAgent().process(
+        [
+            raw_record(
+                "github",
+                payload={
+                    "profile": {
+                        "name": "The Octocat",
+                        "html_url": "https://github.com/octocat",
+                    },
+                    "skills": ["Python"],
+                },
+            )
+        ]
+    )
+    engineering = PresentationAgent().present(intelligence).projections["engineering"]
+
+    assert engineering["skills"] == [
+        {"name": "Python", "category": None, "evidence_count": 0}
+    ]
+    assert engineering["github_profile"] == "https://github.com/octocat"
+    assert engineering["confidence"] == 0.80
+
+
+def test_presentation_agent_generates_warnings_without_modifying_candidate() -> None:
+    """Presentation validation reports omissions and preserves candidate data."""
+    intelligence = CandidateIntelligenceAgent().process([])
+    result = PresentationAgent().present(intelligence)
+
+    assert result.candidate == intelligence.canonical_candidate
+    assert result.warnings == (
+        "missing name",
+        "missing email",
+        "missing phone",
+        "incomplete profile",
+    )
+
+
+def test_presentation_agent_generates_summary() -> None:
+    """Summary reflects existing intelligence artifacts without new reasoning."""
+    result = PresentationAgent().present(_complete_intelligence_result())
+
+    assert result.summary.workflow_status == WorkflowStatus.READY_FOR_PRESENTATION
+    assert result.summary.candidate_confidence == 0.95
+    assert result.summary.sources == ("ATS",)
+    assert result.summary.decision_count == len(result.candidate.decision_logs)
+    assert result.summary.missing_fields == ()
+    assert result.summary.conflicting_fields == ()
+    assert result.summary.presentation_warnings == ()
+
+
+def test_presentation_agent_returns_export_model() -> None:
+    """PresentationResult is deterministic and JSON serializable."""
+    intelligence = _complete_intelligence_result()
+    first = PresentationAgent().present(intelligence)
+    second = PresentationAgent().present(intelligence)
+
+    assert isinstance(first, PresentationResult)
+    assert first == second
+    assert first.decision_context == intelligence.decision_context
+    assert tuple(first.projections) == ("recruiter", "hr", "engineering")
+    assert first.metadata["projection_version"] == "presentation_v1"
+    assert first.model_dump(mode="json")["candidate"]["candidate_id"]
+
+
+def test_presentation_agent_rejects_non_intelligence_input() -> None:
+    """PresentationAgent accepts only the completed intelligence contract."""
+    with pytest.raises(TypeError, match="IntelligenceResult"):
+        PresentationAgent().present({"candidate": "invalid"})
 
 
 def test_agent_orchestrator_coordinates_agent_execution_flow() -> None:
@@ -556,4 +676,6 @@ def test_agent_orchestrator_coordinates_agent_execution_flow() -> None:
     assert intelligence_agent.received is not None
     assert [record.record_id for record in intelligence_agent.received] == ["intake"]
     assert isinstance(presentation_agent.received, IntelligenceResult)
-    assert result == {"presented": presentation_agent.received}
+    assert isinstance(result, PresentationResult)
+    assert isinstance(presentation_agent.received, IntelligenceResult)
+    assert result.candidate == presentation_agent.received.canonical_candidate
