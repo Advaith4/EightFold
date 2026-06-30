@@ -168,8 +168,7 @@ class DuplicateDetectionAgent:
             )
         if rule.name == "Name + Educational Institution":
             return bool(
-                (left.names & right.names)
-                and (left.institutions & right.institutions)
+                (left.names & right.names) and (left.institutions & right.institutions)
             )
         return False
 
@@ -204,9 +203,7 @@ class DuplicateDetectionAgent:
         for signal in signals:
             keys.extend(f"email:{value}" for value in sorted(signal.emails))
             keys.extend(f"phone:{value}" for value in sorted(signal.phones))
-            keys.extend(
-                f"github:{value}" for value in sorted(signal.github_profiles)
-            )
+            keys.extend(f"github:{value}" for value in sorted(signal.github_profiles))
             keys.extend(
                 f"ats_candidate_id:{value}"
                 for value in sorted(signal.ats_candidate_ids)

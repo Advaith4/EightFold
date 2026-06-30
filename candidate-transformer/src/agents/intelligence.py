@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from uuid import UUID, uuid5
@@ -615,10 +616,48 @@ class CandidateIntelligenceAgent:
                         start_date=start_date,
                         end_date=end_date,
                         confidence=self._confidence_for_records([record]),
-                        provenance=[],
                     )
                 )
-        return education
+        return self._deduplicate_education(education)
+
+    def _normalize_words(self, text: str | None) -> set[str]:
+        if not text:
+            return set()
+        cleaned = re.sub(r"[^a-z0-9\s]", "", text.casefold())
+        return set(cleaned.split())
+
+    def _deduplicate_education(self, raw_education: list[Education]) -> list[Education]:
+        unique: list[Education] = []
+        for edu in raw_education:
+            inst_words = self._normalize_words(edu.institution)
+            cred_words = self._normalize_words(edu.credential)
+
+            is_dup = False
+            for existing in unique:
+                other_inst = self._normalize_words(existing.institution)
+                other_cred = self._normalize_words(existing.credential)
+
+                if inst_words and other_inst and inst_words.isdisjoint(other_inst):
+                    continue
+                if cred_words and other_cred and cred_words.isdisjoint(other_cred):
+                    continue
+
+                is_dup = True
+                break
+
+            if not is_dup:
+                unique.append(edu)
+
+        final_unique = []
+        for edu in unique:
+            new_id = self._stable_id(
+                "education",
+                edu.institution or "",
+                edu.credential or "",
+                edu.start_date or "",
+            )
+            final_unique.append(edu.model_copy(update={"education_id": new_id}))
+        return final_unique
 
     def _build_experiences(
         self, raw_records: list[RawCandidateRecord]
@@ -652,7 +691,46 @@ class CandidateIntelligenceAgent:
                         provenance=[],
                     )
                 )
-        return experiences
+        return self._deduplicate_experiences(experiences)
+
+    def _deduplicate_experiences(
+        self, raw_experiences: list[Experience]
+    ) -> list[Experience]:
+        unique: list[Experience] = []
+        for exp in raw_experiences:
+            org_words = self._normalize_words(exp.organization)
+            title_words = self._normalize_words(exp.title)
+            start_words = self._normalize_words(exp.start_date)
+
+            is_dup = False
+            for existing in unique:
+                other_org = self._normalize_words(existing.organization)
+                other_title = self._normalize_words(existing.title)
+                other_start = self._normalize_words(existing.start_date)
+
+                if org_words and other_org and org_words.isdisjoint(other_org):
+                    continue
+                if title_words and other_title and title_words.isdisjoint(other_title):
+                    continue
+                if start_words and other_start and start_words.isdisjoint(other_start):
+                    continue
+
+                is_dup = True
+                break
+
+            if not is_dup:
+                unique.append(exp)
+
+        final_unique = []
+        for exp in unique:
+            new_id = self._stable_id(
+                "experience",
+                exp.organization or "",
+                exp.title or "",
+                exp.start_date or "",
+            )
+            final_unique.append(exp.model_copy(update={"experience_id": new_id}))
+        return final_unique
 
     def _source_label(self, record: RawCandidateRecord) -> str:
         source_type = record.source_type

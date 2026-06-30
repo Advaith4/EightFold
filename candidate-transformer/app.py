@@ -124,9 +124,10 @@ def main() -> None:
                     )
 
                     st.session_state.result = result
+                    st.success("✓ Candidate processed successfully.")
                 except Exception as e:
                     # Catch backend exceptions gracefully without stack traces
-                    st.error(f"An error occurred during processing: {str(e)}")
+                    st.error(f"⚠ Processing failed: {str(e)}")
                     st.session_state.result = None
 
     # Pass the result (if any) to the main layout for rendering

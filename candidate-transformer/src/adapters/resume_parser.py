@@ -129,6 +129,69 @@ class DeterministicResumeParser:
         if links:
             payload.update(links)
 
+        # Generate Decision Log / Parsing Summary
+        summary = ["Resume Parsing Summary\n"]
+        if "full_name" in payload:
+            summary.append("✓ Name extracted")
+        else:
+            summary.append("Missing: Name")
+
+        if "email" in payload:
+            summary.append("✓ Email extracted")
+        else:
+            summary.append("Missing: Email")
+
+        if "phone" in payload:
+            summary.append("✓ Phone extracted")
+        else:
+            summary.append("Missing: Phone")
+
+        if "github_url" in payload:
+            summary.append("✓ GitHub extracted")
+        else:
+            summary.append("Missing: GitHub")
+
+        if "skills" in payload and payload["skills"]:
+            summary.append(f"✓ Skills extracted ({len(payload['skills'])})")
+        else:
+            summary.append("Missing: Skills")
+
+        if "experiences" in payload and payload["experiences"]:
+            summary.append(f"✓ Experience extracted ({len(payload['experiences'])})")
+        else:
+            summary.append("Missing: Experience")
+
+        if "education" in payload and payload["education"]:
+            summary.append(f"✓ Education extracted ({len(payload['education'])})")
+        else:
+            summary.append("Missing: Education")
+
+        if "projects" in payload and payload["projects"]:
+            summary.append(f"✓ Projects extracted ({len(payload['projects'])})")
+        else:
+            summary.append("Missing: Projects")
+
+        if "certifications" in payload and payload["certifications"]:
+            summary.append(
+                f"✓ Certifications extracted ({len(payload['certifications'])})"
+            )
+        else:
+            summary.append("Missing: Certifications")
+
+        missing_links = []
+        if "linkedin_url" not in payload:
+            missing_links.append("LinkedIn")
+        if "portfolio_url" not in payload:
+            missing_links.append("Portfolio")
+
+        if missing_links:
+            summary.append("\nMissing:")
+            for link in missing_links:
+                summary.append(f"• {link}")
+
+        # Attach the parsing summary to metadata so it travels with the RawCandidateRecord
+        payload["metadata"] = {"parsing_summary": "\n".join(summary)}
+
         return payload
 
     def _chunk_sections(self) -> dict[str, list[str]]:
@@ -137,6 +200,7 @@ class DeterministicResumeParser:
         current_section = "UNASSIGNED"
 
         headers = {
+            "SUMMARY": ["SUMMARY", "PROFILE", "OBJECTIVE", "PROFESSIONAL SUMMARY"],
             "EDUCATION": [
                 "EDUCATION",
                 "ACADEMICS",
@@ -150,9 +214,16 @@ class DeterministicResumeParser:
                 "PROFESSIONAL EXPERIENCE",
                 "EMPLOYMENT",
                 "INTERNSHIP & EXPERIENCE",
+                "WORK HISTORY",
             ],
             "PROJECTS": ["PROJECTS", "PERSONAL PROJECTS", "ACADEMIC PROJECTS"],
-            "SKILLS": ["SKILLS", "TECHNICAL SKILLS", "TECHNOLOGIES"],
+            "SKILLS": [
+                "SKILLS",
+                "TECHNICAL SKILLS",
+                "TECHNOLOGIES",
+                "CORE SKILLS",
+                "CORE COMPETENCIES",
+            ],
             "CERTIFICATIONS": ["CERTIFICATIONS", "LICENSES", "COURSES"],
             "ACHIEVEMENTS": ["ACHIEVEMENTS", "AWARDS", "PUBLICATIONS"],
         }
@@ -182,24 +253,31 @@ class DeterministicResumeParser:
         if not self.lines:
             return result
 
-        # First non-empty line under 50 chars without @ is usually the name
-        first_line = self.lines[0]
-        if len(first_line) < 50 and "@" not in first_line:
-            result["full_name"] = first_line
-            parts = first_line.split()
-            if len(parts) >= 2:
-                result["first_name"] = parts[0]
-                result["last_name"] = " ".join(parts[1:])
-            else:
-                result["first_name"] = first_line
-
-        # Look for location (simple heuristic: city, state or country pattern)
-        for line in self.lines[:10]:
-            is_location_line = re.search(
-                r"^[a-zA-Z\s]+,\s*[A-Z]{2}(?:\s+\d{5})?$", line
-            ) or re.search(r"^[A-Z][a-z]+,\s*[A-Z][a-z]+$", line)
-            if is_location_line and line != result.get("full_name"):
-                result["location"] = line
+        # First line is often the name if it is short and doesn't contain contact info
+        for line in self.lines[:5]:
+            if (
+                len(line) < 50
+                and "@" not in line
+                and not re.search(PHONE_PATTERN, line)
+            ):
+                # Avoid section headers
+                if line.upper() in [
+                    "SUMMARY",
+                    "PROFILE",
+                    "OBJECTIVE",
+                    "EXPERIENCE",
+                    "EDUCATION",
+                    "SKILLS",
+                ]:
+                    continue
+                # Probably a name
+                result["full_name"] = line
+                parts = line.split()
+                if len(parts) >= 2:
+                    result["first_name"] = parts[0]
+                    result["last_name"] = " ".join(parts[1:])
+                else:
+                    result["first_name"] = line
                 break
 
         return result
@@ -222,15 +300,53 @@ class DeterministicResumeParser:
     def _extract_links(self) -> dict[str, Any]:
         result: dict[str, Any] = {}
 
-        github = re.search(r"github\.com/([a-zA-Z0-9-]+)", self.text, re.IGNORECASE)
-        if github:
-            result["github_url"] = f"https://github.com/{github.group(1)}"
+        patterns = {
+            "github_url": r"(?:https?://)?(?:www\.)?github\.com/([a-zA-Z0-9-]+)",
+            "linkedin_url": r"(?:https?://)?(?:www\.)?linkedin\.com/in/([a-zA-Z0-9-]+)",
+            "kaggle_url": r"(?:https?://)?(?:www\.)?kaggle\.com/([a-zA-Z0-9-]+)",
+            "leetcode_url": r"(?:https?://)?(?:www\.)?leetcode\.com/u?/([a-zA-Z0-9-]+)",
+            "hackerrank_url": r"(?:https?://)?(?:www\.)?hackerrank\.com/([a-zA-Z0-9-]+)",
+            "codeforces_url": r"(?:https?://)?(?:www\.)?codeforces\.com/profile/([a-zA-Z0-9-]+)",
+        }
 
-        linkedin = re.search(
-            r"linkedin\.com/in/([a-zA-Z0-9-]+)", self.text, re.IGNORECASE
+        for key, pattern in patterns.items():
+            match = re.search(pattern, self.text, re.IGNORECASE)
+            if match:
+                if key == "github_url":
+                    result[key] = f"https://github.com/{match.group(1)}"
+                elif key == "linkedin_url":
+                    result[key] = f"https://www.linkedin.com/in/{match.group(1)}"
+                elif key == "kaggle_url":
+                    result[key] = f"https://www.kaggle.com/{match.group(1)}"
+                elif key == "leetcode_url":
+                    result[key] = f"https://leetcode.com/{match.group(1)}"
+                elif key == "hackerrank_url":
+                    result[key] = f"https://www.hackerrank.com/{match.group(1)}"
+                elif key == "codeforces_url":
+                    result[key] = f"https://codeforces.com/profile/{match.group(1)}"
+
+        # Portfolio detection
+        portfolio_match = re.search(
+            r"(?:https?://)?([a-zA-Z0-9-]+\.(?:com|net|org|dev|io|me))/?\b",
+            self.text,
+            re.IGNORECASE,
         )
-        if linkedin:
-            result["linkedin_url"] = f"https://www.linkedin.com/in/{linkedin.group(1)}"
+        if portfolio_match:
+            domain = portfolio_match.group(1).lower()
+            if not any(
+                x in domain
+                for x in [
+                    "github",
+                    "linkedin",
+                    "kaggle",
+                    "leetcode",
+                    "hackerrank",
+                    "codeforces",
+                    "gmail",
+                    "yahoo",
+                ]
+            ):
+                result["portfolio_url"] = f"https://{domain}"
 
         return result
 
@@ -243,71 +359,98 @@ class DeterministicResumeParser:
         current_entry: dict[str, Any] = {}
 
         for line in section:
-            # Date range detection
             date_match = re.search(DATE_RANGE_PATTERN, line, re.IGNORECASE)
 
+            if not date_match:
+                single_date_match = re.search(DATE_PATTERN, line)
+                if single_date_match:
+                    raw_end = single_date_match.group(0).strip()
+                    date_match = single_date_match
+                else:
+                    date_match = None
+
             if date_match:
-                raw_start = date_match.group(1).strip()
-                raw_end = date_match.group(2).strip()
+                if len(date_match.groups()) > 1 and date_match.group(2):
+                    raw_start = date_match.group(1).strip()
+                    raw_end = date_match.group(2).strip()
 
-                end_norm = normalize_date(raw_end)
-                fallback_year = (
-                    end_norm[:4]
-                    if end_norm and re.search(r"^\d{4}", end_norm)
-                    else None
-                )
-                start_norm = normalize_date(raw_start, fallback_year)
+                    end_norm = normalize_date(raw_end)
+                    fallback_year = (
+                        end_norm[:4]
+                        if end_norm and re.search(r"^\d{4}", end_norm)
+                        else None
+                    )
+                    start_norm = normalize_date(raw_start, fallback_year)
 
-                if start_norm:
-                    current_entry["start_date"] = start_norm
-                if end_norm:
-                    current_entry["end_date"] = end_norm
+                    if start_norm:
+                        current_entry["start_date"] = start_norm
+                    if end_norm:
+                        current_entry["end_date"] = end_norm
+                else:
+                    end_norm = normalize_date(date_match.group(0).strip())
+                    if end_norm:
+                        current_entry["end_date"] = end_norm
 
-                line = line.replace(date_match.group(0), "").strip()
+                line = line.replace(date_match.group(0), "").strip(" ,.-|")
                 if not line:
-                    entries.append(current_entry)
-                    current_entry = {}
+                    continue
+
+            clean_line = line.strip(" ,.-|")
+            if not clean_line:
                 continue
 
-            # If institution, credential, and date exist,
-            # any new line starts a new entry.
-            if "institution" in current_entry and "start_date" in current_entry:
+            if ("start_date" in current_entry or "end_date" in current_entry) and len(
+                clean_line
+            ) < 60:
                 entries.append(current_entry)
                 current_entry = {}
 
-            # Naive assignment if it looks like an institution or degree
-            if not line:
-                continue
-
-            if "institution" not in current_entry and (
-                "University" in line
-                or "College" in line
-                or "School" in line
-                or "Institute" in line
+            if "institution" not in current_entry and any(
+                kw in clean_line
+                for kw in ["University", "College", "School", "Institute", "Academy"]
             ):
-                current_entry["institution"] = line.strip(" ,.-|")
-            elif "credential" not in current_entry and (
-                "Bachelor" in line
-                or "Master" in line
-                or "B.Tech" in line
-                or "B.E." in line
-                or "Degree" in line
-                or "BSc" in line
-                or "MSc" in line
+                current_entry["institution"] = clean_line
+            elif "credential" not in current_entry and any(
+                kw in clean_line
+                for kw in [
+                    "Bachelor",
+                    "Master",
+                    "B.Tech",
+                    "B.E.",
+                    "BSc",
+                    "MSc",
+                    "PhD",
+                    "Degree",
+                    "B.S.",
+                    "M.S.",
+                    "Diploma",
+                ]
             ):
-                current_entry["credential"] = line.strip(" ,.-|")
-            elif "field_of_study" not in current_entry and (
-                "Engineering" in line or "Science" in line or "Arts" in line
+                current_entry["credential"] = clean_line
+            elif "field_of_study" not in current_entry and any(
+                kw in clean_line
+                for kw in [
+                    "Engineering",
+                    "Science",
+                    "Arts",
+                    "Computer",
+                    "Business",
+                    "Mathematics",
+                    "Physics",
+                ]
             ):
-                current_entry["field_of_study"] = line.strip(" ,.-|")
+                current_entry["field_of_study"] = clean_line
+            elif "gpa" in clean_line.lower() or "cgpa" in clean_line.lower():
+                pass
             else:
-                # If we don't have an institution yet, grab the first non-date line
                 if "institution" not in current_entry:
-                    current_entry["institution"] = line.strip(" ,.-|")
+                    current_entry["institution"] = clean_line
                 elif "credential" not in current_entry:
-                    current_entry["credential"] = line.strip(" ,.-|")
+                    current_entry["credential"] = clean_line
 
-        if current_entry:
+        if current_entry and (
+            "institution" in current_entry or "credential" in current_entry
+        ):
             entries.append(current_entry)
 
         return entries
@@ -340,43 +483,51 @@ class DeterministicResumeParser:
                 if end_norm:
                     current_entry["end_date"] = end_norm
 
-                if "current" in raw_end.lower() or "present" in raw_end.lower():
-                    current_entry["is_current"] = True
-                else:
-                    current_entry["is_current"] = False
+                current_entry["is_current"] = bool(
+                    "current" in raw_end.lower() or "present" in raw_end.lower()
+                )
 
-                line = line.replace(date_match.group(0), "").strip()
-                if not line:
-                    continue
-            elif (
-                current_entry
-                and "start_date" in current_entry
-                and not line.startswith("-")
-                and not line.startswith("•")
-                and not line.startswith("*")
-                and len(line) < 60
-            ):
-                entries.append(current_entry)
-                current_entry = {}
+                remainder = line.replace(date_match.group(0), "").strip(" ,.-|")
+                if remainder and "organization" not in current_entry:
+                    current_entry["organization"] = remainder
+                continue
 
             is_bullet = (
                 line.startswith("-") or line.startswith("•") or line.startswith("*")
             )
-            is_long_desc = "start_date" in current_entry and len(line) >= 60
+            clean_line = line.strip(" ,.-|")
 
-            if is_bullet or is_long_desc:
+            # If we see a short, non-bullet line and we already have a date, it's a new entry
+            if not is_bullet and "start_date" in current_entry and len(clean_line) < 60:
+                entries.append(current_entry)
+                current_entry = {}
+
+            if is_bullet:
+                desc = line.lstrip("-•* ")
                 if "description" not in current_entry:
-                    current_entry["description"] = line.lstrip("-•* ")
+                    current_entry["description"] = desc
                 else:
-                    current_entry["description"] += "\n" + line.lstrip("-•* ")
+                    current_entry["description"] += "\n" + desc
             else:
-                # Assume organization comes first, then role
-                if "organization" not in current_entry:
-                    current_entry["organization"] = line.strip(" ,.-|")
-                elif "title" not in current_entry:
-                    current_entry["title"] = line.strip(" ,.-|")
+                if len(clean_line) < 60:
+                    if "organization" not in current_entry:
+                        current_entry["organization"] = clean_line
+                    elif "title" not in current_entry:
+                        current_entry["title"] = clean_line
+                    else:
+                        if "description" not in current_entry:
+                            current_entry["description"] = clean_line
+                        else:
+                            current_entry["description"] += "\n" + clean_line
+                else:
+                    if "description" not in current_entry:
+                        current_entry["description"] = clean_line
+                    else:
+                        current_entry["description"] += "\n" + clean_line
 
-        if current_entry:
+        if current_entry and (
+            "organization" in current_entry or "title" in current_entry
+        ):
             entries.append(current_entry)
 
         return entries
@@ -422,6 +573,24 @@ class DeterministicResumeParser:
         section = self.sections.get("SKILLS", [])
         found_skills = []
 
+        alias_map = {
+            "js": "JavaScript",
+            "reactjs": "React",
+            "react.js": "React",
+            "node": "Node.js",
+            "nodejs": "Node.js",
+            "node.js": "Node.js",
+            "ml": "Machine Learning",
+            "ai": "Artificial Intelligence",
+            "tensorflow": "TensorFlow",
+            "tensor flow": "TensorFlow",
+            "pytorch": "PyTorch",
+            "aws": "AWS",
+            "gcp": "GCP",
+            "vuejs": "Vue",
+            "vue.js": "Vue",
+        }
+
         # Check explicit section first
         for line in section:
             # Split by common delimiters
@@ -429,13 +598,12 @@ class DeterministicResumeParser:
             for part in parts:
                 cleaned = part.strip()
                 # Ignore headers like "Programming Languages:"
-                # if split did not catch it perfectly.
                 if cleaned and " " not in cleaned.strip(": "):
                     found_skills.append(cleaned.strip(": "))
                 elif cleaned:
                     found_skills.append(cleaned)
 
-        # Fallback to the broad search used previously
+        # Fallback to the broad search used previously for missing skills
         tech_keywords = [
             "Python",
             "Java",
@@ -473,19 +641,26 @@ class DeterministicResumeParser:
 
         text_lower = self.text.lower()
         for kw in tech_keywords:
-            if (
-                re.search(r"\b" + re.escape(kw.lower()) + r"\b", text_lower)
-                and kw not in found_skills
-            ):
+            if re.search(r"\b" + re.escape(kw.lower()) + r"\b", text_lower):
                 found_skills.append(kw)
 
-        # Deduplicate while preserving case from original list
+        # Deduplicate and normalize
         final_skills = []
         seen = set()
         for skill in found_skills:
-            if skill.lower() not in seen:
-                seen.add(skill.lower())
-                final_skills.append(skill)
+            normalized_raw = skill.strip(" .,;*•").lower()
+            if not normalized_raw:
+                continue
+
+            canonical = alias_map.get(normalized_raw, skill.strip(" .,;*•"))
+
+            # Simple title case for unmapped skills if they are lowercase
+            if canonical == normalized_raw and canonical.islower():
+                canonical = canonical.title()
+
+            if canonical.lower() not in seen:
+                seen.add(canonical.lower())
+                final_skills.append(canonical)
 
         return final_skills
 

@@ -49,6 +49,7 @@ class PresentationAgent:
         pipeline_summary = self._build_pipeline_summary(
             candidate_count=len(candidates),
             candidate_group_count=len(candidate_groups),
+            raw_record_count=sum(len(group.records) for group in candidate_groups),
             context=context,
         )
         processing_summary = self._build_processing_summary(
@@ -113,10 +114,11 @@ class PresentationAgent:
         *,
         candidate_count: int,
         candidate_group_count: int,
+        raw_record_count: int,
         context: DecisionContext,
     ) -> dict[str, object]:
         return {
-            "raw_record_count": context.record_count,
+            "raw_record_count": raw_record_count,
             "candidate_group_count": candidate_group_count,
             "canonical_candidate_count": candidate_count,
             "selected_candidate_strategy": "first_candidate",
@@ -138,6 +140,7 @@ class PresentationAgent:
             "missing_fields": list(context.missing_important_fields),
             "conflicting_fields": list(context.conflicting_fields),
         }
+
     def _format_workflow_status(self, status: WorkflowStatus) -> str:
         if status == WorkflowStatus.READY_FOR_PRESENTATION:
             return "Ready For Review"
@@ -273,7 +276,7 @@ class PresentationAgent:
         for i, log in enumerate(context.decision_log):
             timeline.append(
                 DecisionTimeline(
-                    step=f"Step {i+1}",
+                    step=f"Step {i + 1}",
                     observation=log,
                     rule="System Policy",
                     decision="Processed successfully",

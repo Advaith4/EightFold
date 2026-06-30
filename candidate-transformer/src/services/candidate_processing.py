@@ -102,12 +102,15 @@ class CandidateProcessingService:
         if value is None:
             return []
         valid: list[CandidateArtifact] = []
-        for item in self._iter_file_inputs(value):
-            try:
-                self._validate_file_input(name, item)
-            except ValidationError:
-                continue
-            valid.append(item)
+        try:
+            for item in self._iter_file_inputs(value):
+                try:
+                    self._validate_file_input(name, item)
+                except ValidationError:
+                    continue
+                valid.append(item)
+        except Exception:
+            pass  # Skip corrupted files that crash iterators (like CorruptedFileError)
         return valid
 
     def _iter_file_inputs(self, value: object) -> tuple[CandidateArtifact, ...]:

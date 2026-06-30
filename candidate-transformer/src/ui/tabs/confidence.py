@@ -1,21 +1,38 @@
 """Confidence tab component."""
 
 import streamlit as st
-from src.agents.models import PresentationResult
+from src.agents.models import CandidatePresentation
 
 
-def render_confidence_tab(result: PresentationResult) -> None:
+def render_confidence_tab(presentation: CandidatePresentation) -> None:
     """Render the Confidence tab."""
     st.markdown("### Confidence Summary")
-    conf = result.confidence
+    conf = presentation.confidence
 
-    st.metric(label="Overall Confidence", value=conf.overall_score)
-    st.markdown(f"**Confidence Level:** {conf.confidence_level}")
-    st.markdown(f"**Method:** {conf.method}")
-    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric(label="Overall Confidence", value=conf.overall_score)
+        try:
+            val = int(conf.overall_score.replace("%", ""))
+            st.progress(val / 100.0)
+        except ValueError:
+            st.progress(0.0)
+    with col2:
+        merges = len(presentation.engineering_projection.merge_decisions)
+        st.metric(label="Merge Decisions", value=str(merges))
+
+    st.divider()
+
+    st.markdown("#### Reason")
     if conf.details:
-        st.markdown("#### Scoring Breakdown")
         for detail in conf.details:
-            st.markdown(f"- {detail}")
+            if "conflict" in detail.lower() or "missing" in detail.lower():
+                st.markdown(f"⚠ {detail}")
+            else:
+                st.markdown(f"✓ {detail}")
     else:
-        st.markdown(f"**Reason:** {conf.reason}")
+        st.markdown(f"✓ {conf.reason}")
+
+    st.divider()
+    st.markdown(f"**Method:** {conf.method}")
+    st.markdown(f"**Confidence Level:** {conf.confidence_level}")

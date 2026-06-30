@@ -176,7 +176,6 @@ def test_intake_agent_routes_loaded_payload_to_registered_adapter() -> None:
     assert [record.record_id for record in records] == ["file"]
 
 
-
 def test_intake_agent_processes_multiple_github_urls_and_skips_invalid() -> None:
     """Multiple GitHub URLs produce records while invalid inputs are collected."""
     fetcher = FakeGitHubFetcher()
@@ -334,6 +333,8 @@ def test_intake_agent_continues_after_partial_file_failure() -> None:
 
     assert [record.payload["email"] for record in records] == ["ada@example.com"]
     assert agent.errors
+
+
 def test_candidate_intelligence_process_returns_canonical_and_context() -> None:
     """Sprint 7.0 returns a canonical candidate plus updated decision context."""
     result = CandidateIntelligenceAgent().process(
@@ -362,7 +363,6 @@ def test_candidate_intelligence_process_returns_canonical_and_context() -> None:
     assert result.canonical_candidate.summary == "GitHub mascot"
     assert result.canonical_candidate.contact_info.emails == ["octocat@example.com"]
     assert [skill.name for skill in result.canonical_candidate.skills] == ["Python"]
-
 
 
 def test_duplicate_detection_matches_same_email() -> None:
@@ -564,6 +564,8 @@ def test_candidate_intelligence_uses_duplicate_detection_groups() -> None:
         "resume",
         "ats",
     ]
+
+
 def test_candidate_intelligence_groups_records_by_duplicate_detection() -> None:
     """Sprint 1.3 groups records using deterministic duplicate detection."""
     result = CandidateIntelligenceAgent().process(
@@ -622,6 +624,7 @@ def test_candidate_intelligence_returns_canonical_candidate_per_group() -> None:
     assert [
         candidate.identity.full_name for candidate in result.canonical_candidates
     ] == ["Ada Lovelace", "Grace Hopper"]
+
 
 def test_candidate_intelligence_maps_single_resume_source() -> None:
     """Resume-only candidates map explicit fields without inference."""
@@ -692,6 +695,7 @@ def test_candidate_intelligence_assigns_deterministic_confidence(
     assert result.selected_candidate.confidence.score == pytest.approx(expected)
     assert result.canonical_candidates[0].confidence.score == pytest.approx(expected)
 
+
 def test_candidate_intelligence_accepts_replaceable_confidence_policy() -> None:
     """Confidence values are centralized in a replaceable policy object."""
     policy = SourceConfidencePolicy(
@@ -743,14 +747,14 @@ def test_candidate_intelligence_preserves_multiple_unmerged_candidates() -> None
 
     assert len(result.canonical_candidates) == 3
     assert (
-        result.selected_candidate.contact_info.preferred_email
-        == "github@example.com"
+        result.selected_candidate.contact_info.preferred_email == "github@example.com"
     )
     assert [
         candidate.contact_info.preferred_email
         for candidate in result.canonical_candidates
     ] == ["github@example.com", "resume@example.com", "ats@example.com"]
     assert result.decision_context.conflicting_fields == ()
+
 
 def test_candidate_intelligence_selected_candidate_remains_first_group() -> None:
     """Backward compatibility keeps the first canonical candidate selected."""
@@ -774,6 +778,7 @@ def test_candidate_intelligence_selected_candidate_remains_first_group() -> None
     assert result.selected_candidate.contact_info.preferred_phone == "+10000000001"
     assert result.canonical_candidates[1].contact_info.preferred_phone == "+10000000002"
     assert result.decision_context.conflicting_fields == ()
+
 
 def test_candidate_intelligence_tracks_provenance_for_populated_fields() -> None:
     """Canonical fields retain provenance back to raw records."""
@@ -830,6 +835,7 @@ def test_candidate_intelligence_records_duplicate_sources_after_grouping() -> No
     assert result.candidate_groups[0].matching_rule == "GitHub Profile Match"
     assert result.decision_context.duplicate_sources == ("GitHub",)
     assert result.decision_context.duplicate_record_ids == ("same",)
+
 
 def test_candidate_intelligence_handles_empty_input() -> None:
     """Empty input yields an empty canonical candidate and context."""
@@ -913,6 +919,7 @@ def test_candidate_intelligence_defers_cross_group_conflict_review() -> None:
 
     assert result.decision_context.conflicting_fields == ()
     assert result.decision_context.workflow_status == WorkflowStatus.INCOMPLETE_PROFILE
+
 
 def test_candidate_intelligence_workflow_status_marks_incomplete_profile() -> None:
     """Missing required observations mark the profile incomplete."""

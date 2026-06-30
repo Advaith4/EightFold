@@ -182,6 +182,7 @@ def test_candidate_processing_service_skips_invalid_github_url(url: str) -> None
     assert isinstance(result, PresentationResult)
     assert orchestrator.received == []
 
+
 def test_candidate_processing_service_delegates_resume_failures_to_intake() -> None:
     """Source-level failures are handled below the service aggregation boundary."""
     service = CandidateProcessingService(
@@ -190,6 +191,7 @@ def test_candidate_processing_service_delegates_resume_failures_to_intake() -> N
 
     with pytest.raises(CorruptedFileError, match="corrupted"):
         service.process_candidate(resume_pdf=Path("resume.pdf"))
+
 
 def test_candidate_processing_service_skips_unsupported_file_type() -> None:
     """Unsupported file parameters are skipped before orchestration."""
@@ -227,6 +229,8 @@ def test_candidate_processing_service_accepts_multiple_inputs() -> None:
         csv_payloads[0],
         "https://github.com/octocat",
     ]
+
+
 def test_candidate_processing_service_accepts_loaded_payloads() -> None:
     """Preloaded payloads can be supplied by UI or API callers."""
     payload = file_payload(".json", "candidate.json")

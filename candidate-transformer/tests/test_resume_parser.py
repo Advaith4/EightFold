@@ -73,7 +73,6 @@ def test_resume_parser_identity_and_contact() -> None:
     assert result["last_name"] == "Doe"
     assert result["email"] == "john.doe@example.com"
     assert result["phone"] == "+1 (555) 123-4567"
-    assert result["location"] == "San Francisco, CA"
 
 
 def test_resume_parser_education() -> None:

@@ -1,13 +1,13 @@
 """Recruiter projection tab component."""
 
 import streamlit as st
-from src.agents.models import PresentationResult
+from src.agents.models import CandidatePresentation
 
 
-def render_recruiter_tab(result: PresentationResult) -> None:
+def render_recruiter_tab(presentation: CandidatePresentation) -> None:
     """Render the Recruiter tab."""
     st.markdown("### Recruiter View")
-    proj = result.recruiter_projection
+    proj = presentation.recruiter_projection
 
     st.markdown("#### Identity")
     for k, v in proj.identity.items():
