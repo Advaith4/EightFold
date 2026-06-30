@@ -2,6 +2,7 @@
 
 from src.loaders.base import BaseLoader, UploadedContent
 from src.loaders.csv_loader import CSVLoader
+from src.loaders.docx_loader import DOCXLoader
 from src.loaders.exceptions import (
     CorruptedFileError,
     FileReadError,
@@ -17,6 +18,7 @@ __all__ = [
     "BaseLoader",
     "CSVLoader",
     "CorruptedFileError",
+    "DOCXLoader",
     "ExtractionStatus",
     "FileMetadata",
     "FilePayload",
