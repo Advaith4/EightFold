@@ -34,7 +34,6 @@ APP_ENV=local
 CONFIG_PATH=config/default.yaml
 LOGGING_CONFIG_PATH=config/logging.yaml
 GITHUB_TOKEN=your_github_fine_grained_token_here
-OPENAI_API_KEY=your_optional_api_key_placeholder_here
 ```
 
 Notes:
