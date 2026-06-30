@@ -10,18 +10,21 @@ from src.loaders.exceptions import (
     UnsupportedFileTypeError,
 )
 from src.loaders.json_loader import JSONLoader
-from src.loaders.models import FileMetadata, FilePayload
+from src.loaders.models import ExtractionStatus, FileMetadata, FilePayload
+from src.loaders.pdf_loader import PDFLoader
 
 __all__ = [
     "BaseLoader",
     "CSVLoader",
     "CorruptedFileError",
+    "ExtractionStatus",
     "FileMetadata",
     "FilePayload",
     "FileReadError",
     "FileTooLargeError",
     "JSONLoader",
     "LoaderError",
+    "PDFLoader",
     "UnsupportedFileTypeError",
     "UploadedContent",
 ]

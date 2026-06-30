@@ -12,6 +12,7 @@ dependencies = [
     "pydantic>=2.8.2,<3.0.0",
     "loguru>=0.7.2,<1.0.0",
     "pyyaml>=6.0.2,<7.0.0",
+    "pypdf>=6.0.0,<7.0.0",
 ]
 
 [tool.poetry]
@@ -52,4 +53,3 @@ check_untyped_defs = true
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-

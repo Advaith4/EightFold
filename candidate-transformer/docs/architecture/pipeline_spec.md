@@ -80,10 +80,10 @@ Candidate Grouping
 Merge Coordinator
   |
   v
-Confidence Calculator
+Provenance Builder
   |
   v
-Provenance Builder
+Confidence Calculator
   |
   v
 Validation
@@ -113,8 +113,8 @@ Streamlit Output
 | Normalization | Standardizes comparable values such as email, phone, dates, skills, locations, and URLs. |
 | Candidate Grouping | Groups records that may represent the same person. |
 | Merge Coordinator | Resolves grouped candidate evidence into one canonical candidate. |
-| Confidence Calculator | Assigns reliability scores to values and entities. |
 | Provenance Builder | Ensures every selected value can be traced back to source evidence. |
+| Confidence Calculator | Assigns reliability scores to values and entities using provenance and agreement signals. |
 | Validation | Verifies structural, semantic, business, and projection readiness rules. |
 | Projection | Converts internal canonical representation into assignment output schema. |
 | JSON Export | Serializes projected output deterministically. |
@@ -297,7 +297,7 @@ Streamlit Output
 | Purpose | Determine which candidate records likely represent the same person. |
 | Responsibilities | Evaluate identifiers, names, links, source IDs, and supporting signals. |
 | Inputs | Normalized CanonicalCandidate collection. |
-| Outputs | CandidateGroup collection. |
+| Outputs | GroupingResult. |
 | Dependencies | Grouping rules, thresholds, conflict policies. |
 | Allowed Side Effects | None. |
 | Failure Modes | Conflicting identifiers, insufficient evidence, ambiguous match. |
@@ -309,7 +309,7 @@ Streamlit Output
 
 **Input Contract -> Output Contract**
 
-`NormalizedCanonicalCandidate[] -> CandidateGroup[]`
+`NormalizedCanonicalCandidate[] -> GroupingResult`
 
 ### 3.10 Merge Coordinator
 
@@ -317,7 +317,7 @@ Streamlit Output
 | --- | --- |
 | Purpose | Resolve grouped candidate evidence into final canonical candidates. |
 | Responsibilities | Apply priority, agreement, completeness, validation, and tie-breaking rules. |
-| Inputs | CandidateGroup collection. |
+| Inputs | GroupingResult. |
 | Outputs | Merged CanonicalCandidate collection. |
 | Dependencies | Merge rules, source priorities, confidence calculator, decision log policy. |
 | Allowed Side Effects | None. |
@@ -330,7 +330,7 @@ Streamlit Output
 
 **Input Contract -> Output Contract**
 
-`CandidateGroup[] -> CanonicalCandidate[]`
+`GroupingResult -> CanonicalCandidate[]`
 
 ### 3.11 Confidence Calculator
 
@@ -338,8 +338,8 @@ Streamlit Output
 | --- | --- |
 | Purpose | Assign reliability scores to fields, entities, and candidates. |
 | Responsibilities | Calculate field confidence, aggregate entity confidence, record reasons. |
-| Inputs | CanonicalCandidate collection with provenance and decisions. |
-| Outputs | CanonicalCandidate collection with confidence populated. |
+| Inputs | ProvenanceCompleteCanonicalCandidate collection, grouping confidence, source agreement, and source reliability configuration. |
+| Outputs | ConfidenceScoredCanonicalCandidate collection. |
 | Dependencies | Confidence weights, source reliability config, scoring rules. |
 | Allowed Side Effects | None. |
 | Failure Modes | Missing weights, invalid score, unsupported source reliability category. |
@@ -351,7 +351,7 @@ Streamlit Output
 
 **Input Contract -> Output Contract**
 
-`CanonicalCandidate[] -> ConfidenceScoredCanonicalCandidate[]`
+`ProvenanceCompleteCanonicalCandidate[] -> ConfidenceScoredCanonicalCandidate[]`
 
 ### 3.12 Provenance Builder
 
@@ -380,7 +380,7 @@ Streamlit Output
 | --- | --- |
 | Purpose | Verify candidates satisfy structural, semantic, business, and projection rules. |
 | Responsibilities | Produce validation results, warnings, and projection readiness status. |
-| Inputs | Provenance-complete CanonicalCandidate collection. |
+| Inputs | ConfidenceScoredCanonicalCandidate collection. |
 | Outputs | Validated CanonicalCandidate collection. |
 | Dependencies | Validator registry, domain spec, projection requirements. |
 | Allowed Side Effects | None. |
@@ -393,7 +393,7 @@ Streamlit Output
 
 **Input Contract -> Output Contract**
 
-`CanonicalCandidate[] -> ValidatedCanonicalCandidate[]`
+`ConfidenceScoredCanonicalCandidate[] -> ValidatedCanonicalCandidate[]`
 
 ### 3.14 Projection
 
@@ -437,6 +437,129 @@ Streamlit Output
 
 `ProjectedCandidate[] -> ExportArtifact`
 
+### 3.16 Explicit Stage Contracts
+
+The following contracts are the authoritative boundary definitions for pipeline stages. Each stage must remain self-contained and must communicate only through its documented input and output artifacts.
+
+#### File Loader
+
+| Contract Area | Specification |
+| --- | --- |
+| Input Artifact | `UploadedContent` from upload, filesystem path, API response, or stream. |
+| Output Artifact | `FilePayload`. |
+| Responsibilities | Read files or equivalent technical content, validate file boundaries, perform deterministic content extraction, compute loader-owned metadata, and produce `FilePayload`. |
+| Must NOT Do | Detect business source, interpret candidate information, normalize values, create raw records, create canonical candidates, or perform business logic. |
+| Guaranteed Invariants | Payload has exactly one loaded content representation, content is bounded by configured file limits, checksum is deterministic, and metadata is loader-owned. |
+
+#### Source Detection
+
+| Contract Area | Specification |
+| --- | --- |
+| Input Artifact | `FilePayload`. |
+| Output Artifact | `SourceDetectionResult`. |
+| Responsibilities | Perform shallow structural inspection, classify likely source, emit confidence and classification signals, and mark ambiguous or unknown states. |
+| Must NOT Do | Extract candidate values, normalize values, map fields, create raw records, perform business interpretation, or invoke adapters. |
+| Guaranteed Invariants | Detection result is deterministic for identical payload and rules, source confidence is explicit, ambiguous results remain explicit, and no candidate data is produced. |
+
+#### Adapter
+
+| Contract Area | Specification |
+| --- | --- |
+| Input Artifact | `FilePayload` plus `SourceDetectionResult`. |
+| Output Artifact | `RawCandidateRecord[]`. |
+| Responsibilities | Parse one known source schema, preserve source payload structure, create immutable raw records, and preserve unmapped source fields. |
+| Must NOT Do | Normalize values, merge candidates, perform cross-source reasoning, calculate confidence, project output, or change source detection results. |
+| Guaranteed Invariants | Each raw record is immutable, checksummed, source-typed, and traceable to the input payload and adapter. |
+
+#### Canonical Mapping
+
+| Contract Area | Specification |
+| --- | --- |
+| Input Artifact | `RawCandidateRecord[]`. |
+| Output Artifact | `PartialCanonicalCandidate[]`. |
+| Responsibilities | Translate source fields into canonical field names, attach initial provenance, and report unmapped fields. |
+| Must NOT Do | Normalize representation, merge records, choose winning values across sources, calculate final confidence, or apply projection rules. |
+| Guaranteed Invariants | Raw records remain unchanged, output uses canonical names only, mapped values retain provenance, and unmapped optional values are preserved or warned. |
+
+#### Normalization
+
+| Contract Area | Specification |
+| --- | --- |
+| Input Artifact | `PartialCanonicalCandidate[]`. |
+| Output Artifact | `NormalizedCanonicalCandidate[]`. |
+| Responsibilities | Standardize value representation using versioned normalization resources, aliases, taxonomies, and deterministic rules. |
+| Must NOT Do | Select winning values, merge candidates, discard unknown values, perform grouping, or modify projection shape. |
+| Guaranteed Invariants | Original evidence remains traceable, unknown values are preserved with warnings, normalization resource version is auditable, and comparable values are deterministic. |
+
+#### Candidate Grouping
+
+| Contract Area | Specification |
+| --- | --- |
+| Input Artifact | `NormalizedCanonicalCandidate[]`. |
+| Output Artifact | `GroupingResult`. |
+| Responsibilities | Score whether records represent the same person, group records, record evidence, apply thresholds, and identify ambiguous review states. |
+| Must NOT Do | Merge field values, select winning values, normalize data, calculate final confidence, or produce final candidates. |
+| Guaranteed Invariants | Grouping confidence is explicit, evidence is retained, threshold decisions are deterministic, and merge receives grouping results rather than inferred state. |
+
+#### Merge
+
+| Contract Area | Specification |
+| --- | --- |
+| Input Artifact | `GroupingResult`. |
+| Output Artifact | `CanonicalCandidate[]`. |
+| Responsibilities | Apply deterministic versioned merge rules, select winning values, record field decisions, and preserve contributing evidence. |
+| Must NOT Do | Change grouping membership, normalize values, perform source detection, silently resolve conflicts, or use non-versioned rules. |
+| Guaranteed Invariants | Every field decision records winning value, rule applied, rule version, and rationale; merge output is deterministic for identical inputs and rule version. |
+
+#### Provenance
+
+| Contract Area | Specification |
+| --- | --- |
+| Input Artifact | `CanonicalCandidate[]`, `RawCandidateRecord[]`, and decision logs. |
+| Output Artifact | `ProvenanceCompleteCanonicalCandidate[]`. |
+| Responsibilities | Record contributing sources, originating files, adapter identity, mapping lineage, and field-level traceability. |
+| Must NOT Do | Calculate trust scores, select values, normalize values, merge candidates, or modify candidate business data. |
+| Guaranteed Invariants | Final business values are traceable to raw records or decisions, lineage references are valid, and provenance remains separate from confidence. |
+
+#### Confidence
+
+| Contract Area | Specification |
+| --- | --- |
+| Input Artifact | `ProvenanceCompleteCanonicalCandidate[]`, grouping confidence, source agreement, and source reliability configuration. |
+| Output Artifact | `ConfidenceScoredCanonicalCandidate[]`. |
+| Responsibilities | Score reliability from provenance, grouping confidence, agreement, conflicts, and configured source reliability. |
+| Must NOT Do | Modify candidate data, select winning values, merge records, validate projection readiness, or override provenance. |
+| Guaranteed Invariants | Scores are reproducible, bounded between 0 and 1, reasoned, and separate from candidate suitability. |
+
+#### Validation
+
+| Contract Area | Specification |
+| --- | --- |
+| Input Artifact | `ConfidenceScoredCanonicalCandidate[]`. |
+| Output Artifact | `ValidationResult` attached to validated candidate artifacts. |
+| Responsibilities | Apply structural, semantic, business, and projection-readiness validation with blocking, warning, and informational severities. |
+| Must NOT Do | Silently reject candidates, mutate business data, invoke AI, merge candidates, or project output. |
+| Guaranteed Invariants | Blocking findings prevent projection, warnings remain visible, informational findings are retained, and validation is deterministic for identical rule version. |
+
+#### Projection
+
+| Contract Area | Specification |
+| --- | --- |
+| Input Artifact | `ValidatedCanonicalCandidate[]`. |
+| Output Artifact | `ProjectedCandidate[]`. |
+| Responsibilities | Purely transform validated canonical candidates into the configured external schema. |
+| Must NOT Do | Mutate canonical candidates, perform business logic, calculate confidence, validate source data, or create side effects. |
+| Guaranteed Invariants | Projection output is deterministic for identical candidate and projection version, canonical data remains unchanged, and projection uses canonical fields only. |
+
+#### Export
+
+| Contract Area | Specification |
+| --- | --- |
+| Input Artifact | `ProjectedCandidate[]`. |
+| Output Artifact | `ExportArtifact`. |
+| Responsibilities | Serialize projected candidates into the configured output format with deterministic ordering and formatting. |
+| Must NOT Do | Modify candidates, apply business logic, calculate confidence, validate candidate meaning, or alter projection shape. |
+| Guaranteed Invariants | Export is serialization-only, output is deterministic for identical projected input and export config, and candidate data is not mutated. |
 ## 4. Pipeline Contracts
 
 | Stage | Input Object | Output Object | Owner | Mutation Allowed | New Object Returned | Required Invariants | Exceptions | Warnings |
@@ -447,11 +570,11 @@ Streamlit Output
 | Adapter Parse | FilePayload | RawCandidateRecord[] | Adapter | no | yes | Raw records immutable and checksummed | AdapterError | Partial parse |
 | Canonical Mapping | RawCandidateRecord[] | PartialCanonicalCandidate[] | Mapper | no | yes | Source values mapped through canonical names | MappingError | Unmapped optional field |
 | Normalization | PartialCanonicalCandidate[] | NormalizedCanonicalCandidate[] | Normalizer | preferably no | yes | Comparable fields normalized | NormalizationError | Ambiguous value preserved |
-| Grouping | NormalizedCanonicalCandidate[] | CandidateGroup[] | GroupingEngine | no | yes | No merge occurs during grouping | GroupingError | Ambiguous match |
-| Merge | CandidateGroup[] | CanonicalCandidate[] | MergeCoordinator | no | yes | Decisions explain conflicts | MergeError | Low confidence selection |
-| Confidence | CanonicalCandidate[] | CanonicalCandidate[] | ConfidenceCalculator | scoped derived update | yes | Scores in range 0..1 | ConfidenceError | Default score used |
-| Provenance | CanonicalCandidate[] | CanonicalCandidate[] | ProvenanceBuilder | scoped derived update | yes | Final values trace to source | ProvenanceError | Missing optional provenance |
-| Validation | CanonicalCandidate[] | ValidatedCanonicalCandidate[] | Validator | scoped validation update | yes | Errors block projection | ValidationError | Non-blocking issue |
+| Grouping | NormalizedCanonicalCandidate[] | GroupingResult | GroupingEngine | no | yes | No merge occurs during grouping | GroupingError | Ambiguous match |
+| Merge | GroupingResult | CanonicalCandidate[] | MergeCoordinator | no | yes | Decisions explain conflicts | MergeError | Low confidence selection |
+| Provenance | CanonicalCandidate[] | ProvenanceCompleteCanonicalCandidate[] | ProvenanceBuilder | scoped derived update | yes | Final values trace to source | ProvenanceError | Missing optional provenance |
+| Confidence | ProvenanceCompleteCanonicalCandidate[] | ConfidenceScoredCanonicalCandidate[] | ConfidenceCalculator | scoped derived update | yes | Scores in range 0..1 | ConfidenceError | Default score used |
+| Validation | ConfidenceScoredCanonicalCandidate[] | ValidatedCanonicalCandidate[] | Validator | scoped validation update | yes | Errors block projection | ValidationError | Non-blocking issue |
 | Projection | ValidatedCanonicalCandidate[] | ProjectedCandidate[] | Projector | no | yes | Canonical model unchanged | ProjectionError | Optional field omitted |
 | Export | ProjectedCandidate[] | ExportArtifact | Exporter | no | yes | JSON deterministic | ExportError | Large output |
 
@@ -465,7 +588,7 @@ Streamlit Output
 | `RawCandidateRecord` | Source Adapter | Source Adapter | no | Pipeline Orchestrator or storage boundary | Created from parsed source payload; retained as immutable source evidence. |
 | `PartialCanonicalCandidate` | Canonical Mapping | Mapper | no | Normalization stage | Created from raw records; consumed by normalization. |
 | `NormalizedCanonicalCandidate` | Normalization | Normalizer | no | Candidate Grouping stage | Created from partial candidates; consumed by grouping. |
-| `CandidateGroup` | Candidate Grouping | Grouping Engine | no | Merge Coordinator | Created from normalized candidates; consumed by merge. |
+| `GroupingResult` | Candidate Grouping | Grouping Engine | no | Merge Coordinator | Created from normalized candidates; contains grouped records, evidence, confidence, threshold decision, and ambiguous review state. |
 | `CanonicalCandidate` | Merge Coordinator | Merge Coordinator | no after emission | Validation or projection boundary | Created from candidate group evidence; enriched by confidence and provenance stages through derived copies. |
 | `ValidatedCanonicalCandidate` | Validation | Validator | no | Projection stage | Created after structural, semantic, business, and projection-readiness checks. |
 | `ProjectedCandidate` | Projection | Projector | no | Export stage | Created from validated candidate; consumed by JSON export. |
@@ -483,11 +606,11 @@ Ownership transfer occurs only at stage boundaries. Stages must not retain hidde
 | Source Adapter | Adapter Registry | FilePayload, SourceDetectionResult | RawCandidateRecord[] | Source parser utilities | Source schema/version settings |
 | Canonical Mapping | Source Adapter | RawCandidateRecord[] | PartialCanonicalCandidate[] | Mapping rules | Source-to-canonical mappings |
 | Normalization | Canonical Mapping | PartialCanonicalCandidate[] | NormalizedCanonicalCandidate[] | Normalization utilities | Alias maps, locale/date/URL rules |
-| Candidate Grouping | Normalization | NormalizedCanonicalCandidate[] | CandidateGroup[] | Matching rules | Match thresholds, blocking keys |
-| Merge Coordinator | Candidate Grouping | CandidateGroup[] | CanonicalCandidate[] | Merge rules | Source priorities, tie-breaking rules |
-| Confidence Calculator | Merge Coordinator | CanonicalCandidate[] | ConfidenceScoredCanonicalCandidate[] | Scoring rules | Weights, source reliability |
-| Provenance Builder | Confidence Calculator | ConfidenceScoredCanonicalCandidate[], RawCandidateRecord[] | ProvenanceCompleteCanonicalCandidate[] | Provenance rules | Required provenance fields |
-| Validation | Provenance Builder | ProvenanceCompleteCanonicalCandidate[] | ValidatedCanonicalCandidate[] | Validator registry | Validation rule sets |
+| Candidate Grouping | Normalization | NormalizedCanonicalCandidate[] | GroupingResult | Matching rules | Match thresholds, blocking keys |
+| Merge Coordinator | Candidate Grouping | GroupingResult | CanonicalCandidate[] | Merge rules | Source priorities, tie-breaking rules |
+| Provenance Builder | Merge Coordinator | CanonicalCandidate[], RawCandidateRecord[] | ProvenanceCompleteCanonicalCandidate[] | Provenance rules | Required provenance fields |
+| Confidence Calculator | Provenance Builder | ProvenanceCompleteCanonicalCandidate[] | ConfidenceScoredCanonicalCandidate[] | Scoring rules | Weights, source reliability |
+| Validation | Confidence Calculator | ConfidenceScoredCanonicalCandidate[] | ValidatedCanonicalCandidate[] | Validator registry | Validation rule sets |
 | Projection | Validation | ValidatedCanonicalCandidate[] | ProjectedCandidate[] | Projection rules | Projection schema/version |
 | JSON Export | Projection | ProjectedCandidate[] | ExportArtifact | Serialization utilities | Output formatting, destination |
 | Streamlit Output | JSON Export | ExportArtifact | User-visible result | Browser session | Display/download settings |
@@ -616,36 +739,115 @@ All timing must use timezone-aware UTC timestamps for wall-clock events and mono
 
 Audit information summarizes processing decisions without replacing detailed provenance and decision logs.
 
+
+### Execution Metadata vs Business Artifacts
+
+`PipelineContext` carries execution metadata only:
+
+- Decision log references and stage-level decision summaries.
+- Warnings.
+- Metrics.
+- Stage execution metadata.
+- Recoverable and unrecoverable failure records.
+
+Business artifacts continue flowing independently through explicit stage input and output contracts. `PipelineContext` may reference artifact identifiers and stage outcomes, but it must not become the owner of candidate business data and must not replace `FilePayload`, `RawCandidateRecord`, `CanonicalCandidate`, `ValidationResult`, `ProjectedCandidate`, or `ExportArtifact`.
 ### Future Extensibility
 
 Future fields may be added for batch IDs, distributed execution IDs, retry counts, queue offsets, and trace IDs. These must remain infrastructure-level fields and must not become candidate domain fields.
 
 ## 6. File Loading Strategy
 
+File loaders are technical infrastructure. They convert uploaded or referenced technical content into bounded `FilePayload` artifacts and then stop.
+
 ### Loader Responsibilities
 
-Loaders convert technical source content into bounded technical payloads. They do not detect business source, parse candidate meaning, normalize values, or create canonical candidates.
+- Read files, streams, API responses, or equivalent uploaded content.
+- Validate file size, extension, MIME hints, readability, encoding, and configured structure limits.
+- Perform deterministic content extraction required to expose bytes or text safely.
+- Compute loader-owned metadata such as filename, extension, content type, size, checksum, encoding, source path when applicable, and load timestamp.
+- Produce `FilePayload`.
+
+### Loader Must Not Do
+
+- Detect business source.
+- Interpret candidate information.
+- Extract candidate values.
+- Normalize values.
+- Map source fields to canonical fields.
+- Create `RawCandidateRecord` or `CanonicalCandidate` objects.
+- Perform business logic, confidence scoring, grouping, merge, validation, projection, or export.
+
+### Canonical FilePayload Contract
+
+`FilePayload` is the single loader output artifact across supported formats.
+
+| Field Category | Contract |
+| --- | --- |
+| Content representation | Exactly one loaded representation is present. Implementations may use bytes, text, or a documented structured technical representation for future formats, but a payload must not contain competing primary representations. |
+| Metadata | Metadata is loader-owned and limited to file characteristics such as filename, extension, content type, size, checksum, encoding, source path, and load timestamp. |
+| Candidate data | Candidate names, emails, skills, work history, education, confidence, provenance, mapping state, merge state, and validation state are forbidden. |
+| Serialization | Serialization preserves the content representation and loader-owned metadata without adding pipeline execution state. |
 
 | Loader | Responsibilities | Returns | Must Not Do |
 | --- | --- | --- | --- |
-| CSV Loader | Read tabular rows, preserve headers, enforce size and encoding limits. | FilePayload with row data and metadata. | Interpret row fields as candidate fields. |
-| JSON Loader | Parse JSON shape, preserve object paths, validate parseability. | FilePayload with JSON object and metadata. | Assume ATS vendor without detection. |
-| PDF Loader | Extract text and document metadata where possible. | FilePayload with bytes, extracted text, page metadata. | Normalize resume content or infer skills. |
-| DOCX Loader | Extract text, sections, and document metadata. | FilePayload with extracted text and structure hints. | Map sections to canonical fields. |
+| CSV Loader | Read text content, preserve original technical content including headers, enforce file and encoding limits. | `FilePayload` with text or bytes and metadata. | Interpret headers or rows as candidate fields. |
+| JSON Loader | Validate JSON syntax, preserve original JSON text or technical representation, enforce file and encoding limits. | `FilePayload` with text or structured technical payload and metadata. | Interpret JSON keys as candidate meaning or assume an ATS vendor. |
+| PDF Loader | Extract bounded technical text and document metadata where configured. | `FilePayload` with bytes/text/page metadata. | Normalize resume content or infer skills. |
+| DOCX Loader | Extract bounded technical text and document structure hints where configured. | `FilePayload` with text/structure metadata. | Map sections to canonical fields. |
+
+### Extraction Status Contract
+
+Document loaders may record `extraction_status` as loader-owned metadata. The supported values are:
+
+| Value | Meaning |
+| --- | --- |
+| `text_extracted` | Deterministic text-layer extraction succeeded and `FilePayload.text` contains extracted text. |
+| `no_text_layer` | The file is valid and readable, but no deterministic text layer is available; OCR is not performed. |
+
+Extraction failures are represented by loader exceptions, not by an extraction status value.
 
 ### Loader Guarantees
 
-- Input size limits are enforced.
-- Content checksum is available.
-- Encoding issues are reported.
+- Input size limits are enforced before downstream processing.
+- Content checksum is deterministic and available.
+- Encoding issues are reported as loader failures.
 - Malformed files produce loader errors, not partial candidate models.
-
+- Loader metadata never carries pipeline state or business interpretation.
 ## 7. Source Detection
 
-Source detection has two distinct classifications:
+Source Detection performs shallow structural inspection solely for classification. It classifies technical file type and likely business source so the adapter registry can select a compatible adapter.
 
-1. **File type**: technical format such as CSV, JSON, PDF, DOCX.
-2. **Business source**: semantic source family such as recruiter spreadsheet, ATS export, resume, LinkedIn export, GitHub profile export.
+### SourceDetectionResult
+
+| Field | Description |
+| --- | --- |
+| `detected_source` | The likely business source or source family when known. |
+| `confidence_score` | Numeric confidence for the classification decision. |
+| `classification_signals` | Deterministic signals used for classification, such as matched headers or JSON keys. |
+| `is_ambiguous` | Whether multiple source classifications remain plausible. |
+| `is_unknown` | Whether no supported source classification could be made. |
+| `adapter_key` | Adapter lookup key when a compatible adapter is known. |
+
+### Permitted Inspection
+
+Source Detection may inspect:
+
+- CSV headers.
+- JSON keys.
+- Document structure.
+- Lightweight keywords.
+- File characteristics such as extension, content type, size, and checksum.
+
+### Must Not Do
+
+Source Detection must never:
+
+- Extract candidate values.
+- Normalize values.
+- Perform canonical mapping.
+- Perform business interpretation.
+- Create raw records or canonical candidates.
+- Invoke adapters or mutate payloads.
 
 ### Detection Strategies
 
@@ -653,33 +855,45 @@ Source detection has two distinct classifications:
 | --- | --- |
 | Extension and MIME hints | Initial technical classification. |
 | File signature | Detect mismatched extensions. |
-| Header inspection | Identify recruiter CSV or vendor exports. |
-| JSON key fingerprints | Identify ATS vendor or API shape. |
-| Document text signals | Identify resume-like documents. |
+| Header inspection | Identify recruiter CSV or vendor exports without reading row values as candidate data. |
+| JSON key fingerprints | Identify ATS vendor or API shape without interpreting candidate values. |
+| Document text signals | Identify resume-like documents through lightweight structural cues. |
 | User-provided source hint | Break ties when configured. |
 | Adapter capability metadata | Determine eligible adapters. |
 
 ### Extensibility
 
 New source detectors are additive. They produce `SourceDetectionResult` and do not change downstream contracts.
-
 ## 8. Adapter Layer
 
 ### Adapter Responsibilities
 
-Adapters own source-specific parsing and raw record creation. They must output `RawCandidateRecord` objects with source metadata and checksums.
+Adapters own source-specific parsing and raw record creation. Each adapter knows exactly one source schema or source family version and must output `RawCandidateRecord` objects with source metadata and checksums.
 
 | Adapter | Responsibility | Output Guarantee |
 | --- | --- | --- |
-| Recruiter Adapter | Parse recruiter-managed CSV/spreadsheet rows. | One or more raw records with source row traceability. |
-| ATS Adapter | Parse ATS JSON/API exports. | Raw records preserving ATS IDs and schema version. |
+| Recruiter Adapter | Parse recruiter-managed CSV/spreadsheet rows according to its own source schema. | One or more raw records with source row traceability and unmapped fields preserved. |
+| ATS Adapter | Parse ATS JSON/API exports for one supported vendor schema. | Raw records preserving ATS IDs, schema version, and unmapped fields. |
 | Resume Adapter | Parse resume text/document payloads into raw evidence records. | Raw records preserving extracted text and document location metadata. |
 | Future Adapters | Parse source-specific structures. | Same raw record contract without changing core pipeline. |
+
+### Adapter Must Not Do
+
+- Normalize source values.
+- Merge records or perform cross-source reasoning.
+- Select winning values.
+- Calculate confidence.
+- Perform canonical projection.
+- Modify `FilePayload` or `SourceDetectionResult`.
+
+### Unmapped Field Preservation
+
+Adapters must preserve source fields that are not understood by the adapter schema in the raw payload or raw metadata. Preservation does not make those fields canonical; it only keeps source evidence available for audit or future mapping rules.
 
 ### Interaction With Adapter Registry
 
 - Adapters are registered during application setup.
-- The pipeline asks the registry for an adapter by source type.
+- The pipeline asks the registry for an adapter by source type or adapter key.
 - The pipeline does not instantiate adapters.
 - Missing adapters produce adapter errors.
 
@@ -692,12 +906,11 @@ Adapters must distinguish:
 - Partial parse.
 - Empty candidate evidence.
 - Extraction timeout.
-
 ## 9. Canonical Mapping
 
 ### Purpose
 
-Canonical mapping converts immutable raw records into initial canonical candidate structures.
+Canonical mapping converts immutable raw records into initial canonical candidate structures through schema translation only.
 
 ### Responsibilities
 
@@ -710,41 +923,69 @@ Canonical mapping converts immutable raw records into initial canonical candidat
 
 - Mapping must be deterministic for identical raw record and configuration.
 - Mapping must never depend on downstream projection schema.
-- Mapping must not normalize beyond minimal safe trimming.
+- Mapping must not normalize values beyond minimal safe trimming required to form valid strings.
+- Mapping must not select winning values across sources.
 - Every mapped value must have provenance.
 
 ### Limitations
 
+- Mapping does not normalize representation.
 - Mapping does not merge candidates.
 - Mapping does not resolve conflicts across records.
 - Mapping does not calculate final confidence.
 - Mapping does not validate projection readiness.
+- Mapping does not apply business decisions beyond documented schema translation.
 
 ### Guarantees
 
 - Raw records remain unchanged.
 - Output uses canonical field names only.
-- Optional unmapped fields are reported as warnings.
+- Optional unmapped fields are reported as warnings or preserved in raw evidence.
 - Required mapping failures are record-level errors.
-
 ## 10. Normalization
+
+Normalization standardizes representation only. It never selects winning values and never changes which records belong together.
+
+### Normalization Resources
+
+| Resource | Contract |
+| --- | --- |
+| Alias dictionaries | Map known aliases to canonical forms, such as skill aliases or source spellings. |
+| Taxonomies | Provide approved category names and controlled vocabularies where configured. |
+| Locale/date rules | Interpret date, phone, and location formats deterministically. |
+| Versioned resources | Every normalization run must be traceable to the normalization resource version used. |
+
+### Unknown Value Handling
+
+Unknown, ambiguous, or unsupported values must be preserved as source evidence with warnings. Normalization may lower confidence inputs for later scoring, but it must not discard evidence or decide final field winners.
 
 | Normalization Type | Rules | Dependencies | Failure Handling | Guarantees |
 | --- | --- | --- | --- | --- |
-| Email | Trim, lowercase domain/local part according to configured policy, validate syntax. | Email parser. | Preserve original, warn, lower confidence. | Duplicate normalized emails can be compared. |
+| Email | Trim, lowercase domain/local part according to configured policy, validate syntax. | Email parser. | Preserve original, warn, lower confidence input. | Duplicate normalized emails can be compared. |
 | Phone | Normalize to international format where country context exists. | Phone parsing utility, country hints. | Preserve source phone, warn. | Valid comparable value when sufficient context exists. |
 | Date | Preserve precision, convert known formats, reject impossible dates. | Date parser, locale hints. | Preserve raw value and warn on ambiguity. | Start/end comparisons become deterministic. |
-| Skill | Map aliases to canonical names, preserve raw aliases. | Skill alias dictionary. | Keep raw skill with lower confidence if unknown. | Candidate-level skill deduplication is possible. |
+| Skill | Map aliases to canonical names, preserve raw aliases. | Versioned skill alias dictionary and taxonomy. | Keep raw skill with lower confidence input if unknown. | Candidate-level skill deduplication is possible later. |
 | Location | Normalize country codes, timezone when known, preserve display name. | Location utilities, geocoding config if enabled. | Preserve display location and warn. | Structured fields are comparable when known. |
-| URL | Normalize scheme, host case, trailing slash policy. | URL parser. | Preserve raw URL and warn if invalid. | Duplicate links can be removed. |
+| URL | Normalize scheme, host case, trailing slash policy. | URL parser. | Preserve raw URL and warn if invalid. | Duplicate links can be removed later. |
 
 Normalization is deterministic and rule-based. AI is not allowed in normalization.
-
 ## 11. Candidate Grouping
 
 ### Identity Resolution
 
-Candidate grouping evaluates whether multiple partial candidates likely represent the same person.
+Candidate grouping evaluates whether multiple normalized candidate artifacts likely represent the same person. Grouping is scored and evidence-based, not binary-only.
+
+### GroupingResult
+
+| Field | Description |
+| --- | --- |
+| `grouped_records` | Records assigned to each proposed group. |
+| `grouping_confidence` | Numeric confidence for each grouping decision. |
+| `evidence` | Signals that supported or contradicted the grouping decision. |
+| `threshold_decision` | The configured threshold outcome, such as group, separate, or review. |
+| `ambiguous_review_state` | Explicit state for candidates requiring review or future source hints. |
+
+Merge consumes `GroupingResult`. Merge must not infer grouping state from side channels.
 
 ### Matching Signals
 
@@ -764,28 +1005,29 @@ Candidate grouping evaluates whether multiple partial candidates likely represen
 - Strong identifier match may group candidates unless contradicted by another strong signal.
 - Medium matches require multiple supporting signals.
 - Weak matches may create warnings but must not merge alone.
-- Conflicting strong identifiers require separate groups or explicit conflict decisions.
+- Conflicting strong identifiers require separate groups or explicit ambiguous review state.
 
 ### Deterministic Behavior
 
-Grouping must produce identical groups for identical inputs, ordering, configuration, and thresholds.
+Grouping must produce identical grouping results for identical inputs, ordering, configuration, and thresholds.
 
 ### Future Scalability
 
 Batch processing may use blocking keys, indexes, or candidate pair generation to avoid all-pairs comparison.
-
 ## 12. Merge Coordinator
+
+Merge is deterministic. Merge decisions are governed by a versioned rule set and consume `GroupingResult` as their grouping input.
 
 ### Merge Lifecycle
 
 ```text
-CandidateGroup
+GroupingResult
   |
   v
 Collect Evidence
   |
   v
-Apply Priority Rules
+Apply Versioned Priority Rules
   |
   v
 Apply Agreement Rules
@@ -800,12 +1042,6 @@ Conflict Resolution
 Decision Logs
   |
   v
-Confidence Calculation
-  |
-  v
-Provenance Construction
-  |
-  v
 CanonicalCandidate
 ```
 
@@ -814,35 +1050,60 @@ CanonicalCandidate
 | Rule Type | Purpose |
 | --- | --- |
 | Priority Rules | Prefer configured source categories for specific fields. |
-| Agreement Rules | Increase reliability when multiple sources agree. |
+| Agreement Rules | Increase reliability evidence when multiple sources agree. |
 | Validation Rules | Reject structurally invalid selected values. |
 | Completeness Rules | Prefer complete values when reliability is comparable. |
 | Tie-Breaking Rules | Deterministically choose among equivalent candidates. |
 
+### Field Decision Contract
+
+Every merge field decision records:
+
+- Winning value.
+- Rejected or competing values when present.
+- Rule applied.
+- Rule version.
+- Rationale.
+- Contributing provenance references.
+
+### Conceptual Priority Matrix
+
+The priority matrix is an architectural artifact. Implementations may represent it in configuration, but every merge run must use an explicit versioned matrix.
+
+| Field Area | Primary Priority Signal | Secondary Signal | Tie Breaker |
+| --- | --- | --- | --- |
+| Identifiers | Verified structured source | Multi-source agreement | Stable source priority order. |
+| Contact | Valid format plus source reliability | Recency when available | Stable source priority order. |
+| Identity | Multi-source agreement | Completeness of name components | Deterministic lexical/source ordering. |
+| Experience | Source reliability | Completeness and chronology | Stable source priority order. |
+| Education | Source reliability | Completeness and chronology | Stable source priority order. |
+| Skills | Normalized alias confidence | Evidence count | Canonical skill ordering. |
+| Links | Normalized URL match | Source reliability | Link type priority then URL ordering. |
+
 ### Conflict Resolution
 
-Conflicts must be resolved with decision logs. If no deterministic rule can safely resolve a conflict, the conflict remains explicit and confidence is reduced.
+Conflicts must be resolved with decision logs. If no deterministic rule can safely resolve a conflict, the conflict remains explicit and confidence may be reduced later.
 
 ### Deterministic Guarantees
 
 - Rule order is configured and stable.
+- Rule version is recorded.
 - Tie-breaking is deterministic.
 - Decision logs capture selected and rejected values.
-- Merge never mutates input candidates.
-
+- Merge never mutates input candidates or grouping results.
 ## 13. Confidence Calculation
 
 ### Purpose
 
-Confidence calculation quantifies reliability of fields, entities, and final candidates.
+Confidence calculation quantifies reliability of fields, entities, and final candidates. It consumes provenance, grouping confidence, source agreement, source conflicts, and configured source reliability.
 
 ### Inputs
 
-- Selected canonical values.
-- Provenance entries.
+- Provenance-complete canonical candidates.
+- Provenance entries and decision logs.
+- Grouping confidence from `GroupingResult`.
+- Source agreement and conflict signals.
 - Source reliability configuration.
-- Decision logs.
-- Agreement and conflict signals.
 
 ### Outputs
 
@@ -851,22 +1112,36 @@ Confidence calculation quantifies reliability of fields, entities, and final can
 - Candidate-level aggregate confidence.
 - Human-readable reasons.
 
+### Must Not Do
+
+Confidence must never:
+
+- Modify candidate business data.
+- Select winning values.
+- Merge records.
+- Replace provenance.
+- Decide candidate suitability.
+- Validate projection readiness.
+
 ### Weighting Strategy
 
 | Signal | Effect |
 | --- | --- |
 | Direct structured source | Raises confidence. |
 | Multi-source agreement | Raises confidence. |
-| Validated format | Raises confidence. |
+| Strong grouping confidence | Raises candidate-level confidence when evidence is not contradicted. |
+| Validated format | Raises confidence input for structurally valid values. |
 | AI-extracted free text | Moderate confidence unless corroborated. |
 | Source conflict | Lowers confidence. |
 | Missing provenance | Blocks final confidence or validation. |
 
 ### Relationship With Merge Coordinator
 
-The merge coordinator selects values using rules and evidence. The confidence calculator scores reliability after or during merge support, but confidence must not be the sole merge decision criterion.
+The merge coordinator selects values using deterministic rules and evidence. The confidence calculator scores reliability after values have provenance. Confidence must not be the sole merge decision criterion and must not change merge output.
 
 ## 14. Provenance
+
+Provenance records source lineage only. It is traceability, not trust scoring.
 
 ### Field-Level Provenance
 
@@ -875,6 +1150,18 @@ Every selected business field must reference source evidence through provenance.
 ### Record-Level Provenance
 
 Every canonical candidate must reference all raw records that contributed evidence.
+
+### Provenance Records Only
+
+- Contributing source or sources.
+- Originating file or technical payload reference.
+- Adapter that produced the raw record.
+- Mapping lineage from source field to canonical field.
+- Decision references needed for audit reconstruction.
+
+### Must Not Do
+
+Provenance must not calculate trust scores, confidence scores, source reliability, merge priority, or candidate quality.
 
 ### Audit Trace
 
@@ -890,14 +1177,22 @@ Decision logs reference provenance IDs so auditors can reconstruct why values we
 
 ## 15. Validation
 
+Validation is severity-based. It produces `ValidationResult` and must never silently reject a candidate.
+
+| Severity | Meaning | Pipeline Behavior |
+| --- | --- | --- |
+| Blocking | Candidate or artifact violates a rule that prevents safe projection or export. | Preserve the candidate internally, record the failure, and block affected projection/export. |
+| Warning | Candidate or artifact has a non-blocking issue requiring visibility. | Continue processing and record warning in validation result and PipelineContext. |
+| Informational | Candidate or artifact has useful audit context without a quality concern. | Continue processing and retain message for audit. |
+
 | Validation Type | Responsibility | Failure Behavior |
 | --- | --- | --- |
-| Structural | Validate datatypes, required fields, ranges, and object shape. | Fatal for invalid internal objects. |
-| Semantic | Validate chronology, field consistency, and normalized values. | Candidate-level error or warning depending severity. |
-| Business | Validate candidate rules such as at least one identifier. | Blocks projection for failed candidates. |
-| Projection | Validate output schema requirements. | Blocks export for affected projected output. |
+| Structural | Validate datatypes, required fields, ranges, and object shape. | Blocking for invalid internal objects. |
+| Semantic | Validate chronology, field consistency, and normalized values. | Blocking or warning depending rule severity. |
+| Business | Validate candidate rules such as at least one identifier. | Blocks projection for failed candidates when severity is blocking. |
+| Projection | Validate output schema requirements. | Blocks export for affected projected output when severity is blocking. |
 
-Validation must be deterministic and rule-based. AI is not allowed in validation.
+Validation must be deterministic and rule-based. AI is not allowed in validation. Validation does not mutate candidate business data, merge candidates, calculate confidence, or project output.
 
 ## 16. Projection
 
@@ -914,7 +1209,16 @@ Projection Version
 Assignment Output Schema
 ```
 
-Projection reads from canonical candidates and emits external JSON according to a named projection version. It must not read raw source schemas and must not mutate canonical candidates.
+Projection is a pure transformation. It reads from validated canonical candidates and emits external JSON-compatible artifacts according to a named projection version.
+
+### Projection Must Not Do
+
+- Mutate canonical candidates.
+- Perform business logic.
+- Calculate confidence.
+- Modify provenance or decision logs.
+- Read raw source schemas.
+- Produce side effects.
 
 ### Configurability
 
@@ -931,22 +1235,47 @@ Projection may configure:
 
 Projection schemas are versioned independently from the internal canonical domain model. Backward-compatible additions may be added under a new minor projection version. Breaking output changes require a new major projection version.
 
+### Export Contract
+
+Export performs serialization only. It consumes projected candidates and produces `ExportArtifact`.
+
+Export must not:
+
+- Modify candidates.
+- Apply business logic.
+- Calculate confidence.
+- Change projection shape.
+- Interpret candidate meaning.
+
+Export guarantees deterministic serialization for identical projected input and export configuration.
+
 ## 17. Error Handling
 
-| Stage | Recoverable Failures | Fatal Failures | Fallback Behavior | Continuation Rule |
+Every stage uses the same error contract. Stage outputs must distinguish successful outcomes, recoverable failures, unrecoverable failures, and warnings.
+
+| Stage | Success Outcome | Recoverable Failures | Unrecoverable Failures | Warnings |
 | --- | --- | --- | --- | --- |
-| File Loader | Single unreadable file in batch | Invalid global config, unsafe file | Skip failed file | Continue other files |
-| Source Detection | Ambiguous business source | Unsupported file with no adapter | Ask for source hint in future UI | Continue other files |
-| Adapter | Partial parse | Adapter contract violation | Emit raw parse warning | Continue other sources if safe |
-| Mapping | Optional unmapped field | Required mapping unavailable | Preserve warning | Continue candidate if usable |
-| Normalization | Ambiguous value | Rule engine unavailable | Preserve raw value with lower confidence | Continue with warning |
-| Grouping | Weak match | Invalid grouping config | Keep separate groups | Continue |
-| Merge | Low-confidence conflict | No deterministic conflict rule for required field | Emit conflict decision | Candidate may fail validation |
-| Confidence | Missing optional weight | Invalid score configuration | Use configured default only if allowed | Continue with warning |
-| Provenance | Missing optional source location | Missing raw record reference | None | Candidate fails validation |
-| Validation | Warning-level issue | Structural invalidity | None | Block projection if fatal |
-| Projection | Optional field missing | Required output field missing | Omit optional fields | Block affected candidate |
-| Export | Large output warning | Write permission failure | Return in-memory artifact if configured | Stop export |
+| File Loader | `FilePayload` produced. | Single unreadable file in batch, unsupported metadata hint. | Invalid global config, unsafe file, configured size/security violation. | Unsupported metadata hints. |
+| Source Detection | `SourceDetectionResult` produced. | Ambiguous business source, low confidence classification. | Unsupported file with no eligible adapter. | Ambiguous or conflicting classification signals. |
+| Adapter | `RawCandidateRecord[]` produced. | Partial parse, source-level malformed optional region. | Adapter contract violation, unsupported required schema. | Unmapped source fields or partial evidence. |
+| Mapping | `PartialCanonicalCandidate[]` produced. | Optional unmapped field. | Required mapping unavailable. | Unmapped optional field. |
+| Normalization | `NormalizedCanonicalCandidate[]` produced. | Ambiguous or unknown value preserved. | Rule engine unavailable or invalid normalization resource version. | Preserved raw value, unknown alias, unsupported locale. |
+| Grouping | `GroupingResult` produced. | Weak match or ambiguous review state. | Invalid grouping configuration. | Ambiguous match. |
+| Merge | `CanonicalCandidate[]` produced. | Low-confidence conflict retained. | No deterministic conflict rule for required field. | Conflict decision, reduced downstream confidence input. |
+| Provenance | `ProvenanceCompleteCanonicalCandidate[]` produced. | Missing optional source location. | Missing raw record reference for final value. | Missing optional provenance detail. |
+| Confidence | `ConfidenceScoredCanonicalCandidate[]` produced. | Missing optional weight with configured default. | Invalid score configuration. | Default score used. |
+| Validation | `ValidationResult` produced. | Warning or informational finding. | Blocking structural invalidity for affected candidate. | Non-blocking validation issue. |
+| Projection | `ProjectedCandidate[]` produced. | Optional field missing. | Required output field missing. | Optional field omitted. |
+| Export | `ExportArtifact` produced. | Large output warning, transient destination issue when retryable. | Write permission failure without in-memory fallback. | Large output or omitted optional export detail. |
+
+### Failure Propagation Through PipelineContext
+
+- Successful stages append metrics and stage execution metadata.
+- Warnings are appended to PipelineContext and preserved on the relevant artifact when applicable.
+- Recoverable failures are appended to PipelineContext with stage name, artifact reference, failure category, and continuation decision.
+- Unrecoverable failures are appended to PipelineContext and stop the affected pipeline path according to the continuation rule.
+- Business artifacts continue flowing independently when a recoverable failure allows continuation.
+- PipelineContext records failure metadata; it does not mutate business artifacts to represent failure.
 
 ### Examples
 
@@ -956,8 +1285,6 @@ Projection schemas are versioned independently from the internal canonical domai
 - **Validation failure**: Candidate remains internally available but is not projected.
 - **Projection failure**: Canonical candidate remains unchanged; projection error is reported.
 - **Configuration failure**: Pipeline fails fast before processing begins.
-
-
 ### Retry Policy Matrix
 
 | Failure | Recoverable | Retry Allowed | Maximum Retries | Fallback |
@@ -1014,8 +1341,8 @@ sequenceDiagram
     participant Normalizer
     participant Grouping
     participant Merge
-    participant Confidence
     participant Provenance
+    participant Confidence
     participant Validator
     participant Projector
     participant Exporter
@@ -1035,13 +1362,13 @@ sequenceDiagram
     Pipeline->>Normalizer: Normalize
     Normalizer-->>Pipeline: Normalized candidates
     Pipeline->>Grouping: Group candidates
-    Grouping-->>Pipeline: CandidateGroup[]
+    Grouping-->>Pipeline: GroupingResult
     Pipeline->>Merge: Merge candidates
     Merge-->>Pipeline: Canonical candidates
-    Pipeline->>Confidence: Calculate confidence
-    Confidence-->>Pipeline: Confidence-scored candidates
     Pipeline->>Provenance: Build provenance
     Provenance-->>Pipeline: Provenance-complete candidates
+    Pipeline->>Confidence: Calculate confidence
+    Confidence-->>Pipeline: Confidence-scored candidates
     Pipeline->>Validator: Validate
     Validator-->>Pipeline: Validation results
     Pipeline->>Projector: Project output
@@ -1070,8 +1397,8 @@ flowchart TD
     PIPE --> NORM[Normalization]
     PIPE --> GROUP[Grouping]
     PIPE --> MERGE[Merge Coordinator]
-    PIPE --> CONF[Confidence Calculator]
     PIPE --> PROV[Provenance Builder]
+    PIPE --> CONF[Confidence Calculator]
     PIPE --> VAL[Validation]
     PIPE --> PROJ[Projection]
     PIPE --> EXP[Export]
@@ -1112,9 +1439,9 @@ stateDiagram-v2
     Mapping --> Normalizing
     Normalizing --> Grouping
     Grouping --> Merging
-    Merging --> Confidence
-    Confidence --> Provenance
-    Provenance --> Validating
+    Merging --> Provenance
+    Provenance --> Confidence
+    Confidence --> Validating
     Validating --> Projecting
     Projecting --> Exporting
     Exporting --> Completed
@@ -1289,7 +1616,7 @@ PartialCanonicalCandidate
 NormalizedCanonicalCandidate
   |
   v
-CandidateGroup
+GroupingResult
   |
   v
 CanonicalCandidate
@@ -1311,7 +1638,7 @@ flowchart TD
     Detection --> Raw[RawCandidateRecord]
     Raw --> Partial[PartialCanonicalCandidate]
     Partial --> Normalized[NormalizedCanonicalCandidate]
-    Normalized --> Group[CandidateGroup]
+    Normalized --> Group[GroupingResult]
     Group --> Canonical[CanonicalCandidate]
     Canonical --> Validated[ValidatedCanonicalCandidate]
     Validated --> Projected[ProjectedCandidate]

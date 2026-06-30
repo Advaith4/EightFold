@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
+from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -11,6 +12,14 @@ CONTENT_TYPE_PATTERN = re.compile(
     r"^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$"
 )
 EXTENSION_PATTERN = re.compile(r"^\.[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
+class ExtractionStatus(str, Enum):  # noqa: UP042
+    """Technical extraction status for document loaders."""
+
+    TEXT_EXTRACTED = "text_extracted"
+    NO_TEXT_LAYER = "no_text_layer"
+    EXTRACTION_FAILED = "extraction_failed"
 
 
 def utc_now() -> datetime:
@@ -45,6 +54,8 @@ class FileMetadata(LoaderModel):
     checksum: str
     encoding: str | None = None
     source_path: str | None = None
+    extraction_status: ExtractionStatus | None = None
+    page_count: int | None = Field(default=None, ge=0)
     loaded_at: datetime = Field(default_factory=utc_now)
 
     @field_validator("filename", "content_type", "extension", "encoding", "source_path")
