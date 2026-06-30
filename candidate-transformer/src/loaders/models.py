@@ -32,7 +32,6 @@ class LoaderModel(BaseModel):
         extra="forbid",
         frozen=True,
         populate_by_name=True,
-        str_strip_whitespace=True,
     )
 
 
