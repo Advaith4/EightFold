@@ -315,6 +315,42 @@ class CandidateIntelligenceAgent:
             if location_value is not None
             else None
         )
+        experiences = self._build_experiences(raw_records)
+        education = self._build_education(raw_records)
+        skills = self._build_skills(raw_records)
+        links = self._build_links(raw_records)
+
+        base_confidence = self._confidence_for_records(raw_records)
+        penalty = 0.0
+        bonus = 0.0
+
+        if not experiences:
+            penalty += 0.15
+        else:
+            bonus += 0.05
+
+        if not education:
+            penalty += 0.15
+        else:
+            bonus += 0.05
+
+        if not skills:
+            penalty += 0.10
+        else:
+            bonus += 0.01
+
+        if not contact_info.preferred_email and not contact_info.preferred_phone:
+            penalty += 0.10
+
+        if links:
+            bonus += 0.01
+
+        final_score = min(0.99, max(0.0, base_confidence.score - penalty + bonus))
+        confidence = Confidence(
+            score=final_score,
+            method="Dynamic Completeness Scoring",
+        )
+
         candidate = CanonicalCandidate(
             candidate_id=self._candidate_id(raw_records, selected),
             identifiers=self._build_identifiers(
@@ -323,12 +359,12 @@ class CandidateIntelligenceAgent:
             identity=identity,
             contact_info=contact_info,
             location=location,
-            experiences=self._build_experiences(raw_records),
-            education=self._build_education(raw_records),
-            skills=self._build_skills(raw_records),
-            links=self._build_links(raw_records),
+            experiences=experiences,
+            education=education,
+            skills=skills,
+            links=links,
             summary=self._selected_string(selected, "summary"),
-            confidence=self._confidence_for_records(raw_records),
+            confidence=confidence,
             provenance=all_provenance,
             decision_logs=decision_logs,
             audit_information=AuditInformation(

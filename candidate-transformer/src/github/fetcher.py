@@ -10,7 +10,15 @@ from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from src.detection.detector import GITHUB_RESERVED_PATHS
-from src.exceptions import AdapterError, ValidationError
+from src.exceptions import ValidationError
+from src.github.exceptions import (
+    GitHubAPIException,
+    GitHubNetworkException,
+    GitHubRateLimitException,
+    GitHubTimeoutException,
+    GitHubUserNotFoundException,
+    InvalidGitHubURLException,
+)
 from src.github.models import GitHubPayload
 from src.models.base import JsonValue
 
@@ -19,8 +27,11 @@ UrlOpener = Callable[[Request, float], Any]
 
 
 def default_urlopen(request: Request, timeout_seconds: float) -> Any:
-    """Open a URL request with timeout using urllib's keyword contract."""
-    return urlopen(request, timeout=timeout_seconds)
+    """Open a URL request with timeout, bypassing system proxies to avoid environmental errors."""
+    import urllib.request
+    proxy_handler = urllib.request.ProxyHandler({})
+    opener = urllib.request.build_opener(proxy_handler)
+    return opener.open(request, timeout=timeout_seconds)
 
 
 class GitHubFetcher:
@@ -38,15 +49,19 @@ class GitHubFetcher:
         username = self._username_from_profile_url(profile_url)
         profile = self._get_object(f"/users/{username}")
         if not profile:
-            raise AdapterError("GitHub profile is empty")
+            raise GitHubAPIException("GitHub profile is empty")
         repositories = self._get_list(f"/users/{username}/repos")
         languages: dict[str, dict[str, int]] = {}
         for repository in repositories:
             full_name = repository.get("full_name")
             if isinstance(full_name, str) and full_name:
-                languages[full_name] = self._get_language_map(
-                    f"/repos/{full_name}/languages"
-                )
+                try:
+                    languages[full_name] = self._get_language_map(
+                        f"/repos/{full_name}/languages"
+                    )
+                except GitHubRateLimitException:
+                    # Gracefully degrade: return the profile with whatever languages were fetched so far
+                    break
         return GitHubPayload(
             profile=profile,
             repositories=repositories,
@@ -56,33 +71,33 @@ class GitHubFetcher:
     def _username_from_profile_url(self, value: str) -> str:
         parsed = urlparse(value)
         if parsed.scheme != "https" or parsed.netloc.lower() != "github.com":
-            raise ValidationError(
+            raise InvalidGitHubURLException(
                 "GitHubFetcher requires an HTTPS github.com profile URL"
             )
         path_parts = [part for part in parsed.path.split("/") if part]
         if len(path_parts) != 1:
-            raise ValidationError("GitHubFetcher only supports profile URLs")
+            raise InvalidGitHubURLException("GitHubFetcher only supports profile URLs")
         username = path_parts[0]
         if username.lower() in GITHUB_RESERVED_PATHS or username.startswith("."):
-            raise ValidationError("GitHubFetcher only supports user profile URLs")
+            raise InvalidGitHubURLException("GitHubFetcher only supports user profile URLs")
         return username
 
     def _get_object(self, path: str) -> dict[str, JsonValue]:
         response = self._get_json(path)
         if not isinstance(response, dict):
-            raise AdapterError("GitHub API returned an unexpected object shape")
+            raise GitHubAPIException("GitHub API returned an unexpected object shape")
         return response
 
     def _get_list(self, path: str) -> list[dict[str, JsonValue]]:
         response = self._get_json(path)
         if not isinstance(response, list):
-            raise AdapterError("GitHub API returned an unexpected list shape")
+            raise GitHubAPIException("GitHub API returned an unexpected list shape")
         return response
 
     def _get_language_map(self, path: str) -> dict[str, int]:
         response = self._get_json(path)
         if not isinstance(response, dict):
-            raise AdapterError("GitHub API returned an unexpected language shape")
+            raise GitHubAPIException("GitHub API returned an unexpected language shape")
         languages: dict[str, int] = {}
         for key, value in response.items():
             if isinstance(key, str) and isinstance(value, int):
@@ -102,18 +117,22 @@ class GitHubFetcher:
                 raw_body = response.read().decode("utf-8")
         except HTTPError as exc:
             if exc.code == 404:
-                raise AdapterError("GitHub profile was not found") from exc
+                raise GitHubUserNotFoundException("GitHub profile was not found") from exc
             if exc.code in {403, 429}:
-                raise AdapterError("GitHub API rate limit was reached") from exc
-            raise AdapterError("GitHub API request failed") from exc
+                raise GitHubRateLimitException(f"GitHub API rate limit was reached. You may need to wait or authenticate. ({exc.reason})") from exc
+            raise GitHubAPIException(f"GitHub API request failed ({exc.code}): {exc.reason}") from exc
         except URLError as exc:
-            raise AdapterError("GitHub API network request failed") from exc
+            if isinstance(exc.reason, TimeoutError) or "timed out" in str(exc.reason).lower():
+                raise GitHubTimeoutException(f"GitHub API network request timed out: {exc.reason}") from exc
+            raise GitHubNetworkException(f"GitHub API network request failed: {exc.reason}") from exc
+        except TimeoutError as exc:
+            raise GitHubTimeoutException(f"GitHub API network request timed out: {exc}") from exc
         except OSError as exc:
-            raise AdapterError("GitHub API response could not be read") from exc
+            raise GitHubNetworkException(f"GitHub API response could not be read: {exc}") from exc
         try:
             parsed = json.loads(raw_body)
         except json.JSONDecodeError as exc:
-            raise AdapterError("GitHub API returned malformed JSON") from exc
+            raise GitHubAPIException("GitHub API returned malformed JSON") from exc
         if not isinstance(parsed, (dict, list)):
-            raise AdapterError("GitHub API returned an unsupported JSON shape")
+            raise GitHubAPIException("GitHub API returned an unsupported JSON shape")
         return parsed

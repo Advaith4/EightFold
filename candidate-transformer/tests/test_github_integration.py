@@ -10,6 +10,14 @@ from urllib.request import Request
 
 import pytest
 from src.exceptions import AdapterError, ValidationError
+from src.github.exceptions import (
+    GitHubAPIException,
+    GitHubNetworkException,
+    GitHubRateLimitException,
+    GitHubTimeoutException,
+    GitHubUserNotFoundException,
+    InvalidGitHubURLException,
+)
 from src.github import GitHubAdapter, GitHubFetcher, GitHubPayload
 from src.models import PayloadFormat, RawCandidateRecord
 from src.models.enums import SourceType
@@ -119,13 +127,13 @@ def test_github_fetcher_fetches_profile_repositories_and_languages() -> None:
 )
 def test_github_fetcher_rejects_invalid_profile_urls(url: str) -> None:
     """GitHubFetcher accepts only HTTPS single-profile GitHub URLs."""
-    with pytest.raises(ValidationError):
+    with pytest.raises(InvalidGitHubURLException):
         GitHubFetcher(opener=FakeGitHubAPI({})).fetch(url)
 
 
 def test_github_fetcher_rejects_repository_url() -> None:
     """Repository URLs are out of scope for Sprint 5.1."""
-    with pytest.raises(ValidationError):
+    with pytest.raises(InvalidGitHubURLException):
         GitHubFetcher(opener=FakeGitHubAPI({})).fetch(
             "https://github.com/octocat/hello-world"
         )
@@ -133,7 +141,7 @@ def test_github_fetcher_rejects_repository_url() -> None:
 
 def test_github_fetcher_rejects_reserved_github_path() -> None:
     """Reserved GitHub paths are not user profiles."""
-    with pytest.raises(ValidationError):
+    with pytest.raises(InvalidGitHubURLException):
         GitHubFetcher(opener=FakeGitHubAPI({})).fetch("https://github.com/settings")
 
 
@@ -151,7 +159,7 @@ def test_github_fetcher_maps_404_to_adapter_error() -> None:
         }
     )
 
-    with pytest.raises(AdapterError, match="not found"):
+    with pytest.raises(GitHubUserNotFoundException, match="not found"):
         GitHubFetcher(opener=api).fetch("https://github.com/octocat")
 
 
@@ -169,7 +177,7 @@ def test_github_fetcher_maps_rate_limit_to_adapter_error() -> None:
         }
     )
 
-    with pytest.raises(AdapterError, match="rate limit"):
+    with pytest.raises(GitHubRateLimitException, match="rate limit"):
         GitHubFetcher(opener=api).fetch("https://github.com/octocat")
 
 
@@ -177,8 +185,25 @@ def test_github_fetcher_maps_network_failure_to_adapter_error() -> None:
     """Network failures do not leak urllib exceptions."""
     api = FakeGitHubAPI({"/users/octocat": URLError("offline")})
 
-    with pytest.raises(AdapterError, match="network"):
+    with pytest.raises(GitHubNetworkException, match="network"):
         GitHubFetcher(opener=api).fetch("https://github.com/octocat")
+
+
+def test_github_fetcher_maps_timeout_failure() -> None:
+    """Timeout failures are mapped to GitHubTimeoutException."""
+    api = FakeGitHubAPI({"/users/octocat": URLError(TimeoutError("timed out"))})
+
+    with pytest.raises(GitHubTimeoutException, match="timed out"):
+        GitHubFetcher(opener=api).fetch("https://github.com/octocat")
+
+
+def test_github_fetcher_rejects_invalid_urls() -> None:
+    """Invalid URLs raise InvalidGitHubURLException."""
+    with pytest.raises(InvalidGitHubURLException, match="profile URL"):
+        GitHubFetcher().fetch("https://github.com/octocat/hello-world")
+
+    with pytest.raises(InvalidGitHubURLException, match="user profile URL"):
+        GitHubFetcher().fetch("https://github.com/settings")
 
 
 def test_github_fetcher_handles_empty_repositories() -> None:

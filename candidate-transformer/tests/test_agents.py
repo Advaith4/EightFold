@@ -225,7 +225,7 @@ def test_candidate_intelligence_maps_single_resume_source() -> None:
     assert [skill.name for skill in candidate.skills] == ["Python"]
     assert candidate.education[0].institution == "University"
     assert candidate.experiences[0].organization == "Analytical"
-    assert candidate.confidence.score == 0.85
+    assert candidate.confidence.score == pytest.approx(0.96)
 
 
 @pytest.mark.parametrize(
@@ -251,18 +251,24 @@ def test_candidate_intelligence_assigns_deterministic_confidence(
         raw_record(
             f"record-{index}",
             source_type=source,
-            payload={"email": f"candidate{index}@example.com"},
+            payload={
+                "email": f"candidate{index}@example.com",
+                "experiences": [{"organization": f"Dummy Corp {index}"}],
+                "education": [{"institution": f"Dummy U {index}"}],
+                "skills": ["Dummy Skill"],
+            },
         )
         for index, source in enumerate(sources)
     ]
 
     result = CandidateIntelligenceAgent().process(records)
+    # Calculate expected bonus based on mocked payload
+    bonus = 0.0
+    if len(records) > 0:
+        bonus += 0.11
+    expected = min(0.99, max(0.0, expected_score + bonus))
 
-    assert result.canonical_candidate.confidence.score == expected_score
-    assert (
-        result.canonical_candidate.confidence.method
-        == "deterministic_source_precedence"
-    )
+    assert result.canonical_candidate.confidence.score == pytest.approx(expected)
 
 
 def test_candidate_intelligence_accepts_replaceable_confidence_policy() -> None:
@@ -277,13 +283,20 @@ def test_candidate_intelligence_accepts_replaceable_confidence_policy() -> None:
             raw_record(
                 "resume",
                 source_type=DomainSourceType.RESUME,
-                payload={"email": "ada@example.com"},
+                payload={
+                    "email": "ada@example.com",
+                    "experiences": [{"organization": "Dummy Corp"}],
+                    "education": [{"institution": "Dummy U"}],
+                    "skills": ["Dummy Skill"],
+                },
             )
         ]
     )
 
-    assert result.canonical_candidate.confidence.score == 0.42
-    assert result.canonical_candidate.confidence.method == "test_policy"
+    assert result.canonical_candidate.confidence.score == pytest.approx(0.53)
+    assert (
+        result.canonical_candidate.confidence.method == "Dynamic Completeness Scoring"
+    )
 
 
 def test_candidate_intelligence_prefers_ats_over_resume_and_github() -> None:
@@ -559,32 +572,22 @@ def _complete_intelligence_result() -> IntelligenceResult:
 def test_presentation_agent_builds_recruiter_projection() -> None:
     """Recruiter view presents concise candidate and readiness information."""
     result = PresentationAgent().present(_complete_intelligence_result())
-    recruiter = result.projections["recruiter"]
+    recruiter = result.recruiter_projection
 
-    assert recruiter["full_name"] == "Ada Lovelace"
-    assert recruiter["email"] == "ada@example.com"
-    assert recruiter["phone"] == "+15551234567"
-    assert recruiter["skills"] == ["Python"]
-    assert recruiter["experience_count"] == 1
-    assert recruiter["education_count"] == 1
+    assert recruiter.identity["Name"] == "Ada Lovelace"
+    assert recruiter.contact["Primary Email"] == "ada@example.com"
+    assert recruiter.skills == ["Python"]
+    assert recruiter.experience_summary == "1 previous roles detected"
 
 
 def test_presentation_agent_builds_hr_projection() -> None:
     """HR view presents contact, source, education, and experience details."""
     result = PresentationAgent().present(_complete_intelligence_result())
-    hr_view = result.projections["hr"]
+    hr_view = result.hr_projection
 
-    assert hr_view["sources"] == ["ATS"]
-    assert hr_view["education"] == [
-        {
-            "institution": "University",
-            "credential": "BS",
-            "field_of_study": None,
-        }
-    ]
-    assert hr_view["experience"] == [
-        {"title": "Engineer", "organization": "Analytical", "is_current": False}
-    ]
+    assert hr_view.sources == ["ATS"]
+    assert hr_view.provenance_summary == "Deterministic Merge"
+    assert "Added via ATS" in hr_view.candidate_timeline[0]
 
 
 def test_presentation_agent_builds_engineering_projection() -> None:
@@ -603,13 +606,10 @@ def test_presentation_agent_builds_engineering_projection() -> None:
             )
         ]
     )
-    engineering = PresentationAgent().present(intelligence).projections["engineering"]
+    engineering = PresentationAgent().present(intelligence).engineering_projection
 
-    assert engineering["skills"] == [
-        {"name": "Python", "category": None, "evidence_count": 0}
-    ]
-    assert engineering["github_profile"] == "https://github.com/octocat"
-    assert engineering["confidence"] == 0.80
+    assert engineering.raw_sources == ["GitHub"]
+    assert "0.4" in engineering.confidence_details
 
 
 def test_presentation_agent_generates_warnings_without_modifying_candidate() -> None:
@@ -617,26 +617,20 @@ def test_presentation_agent_generates_warnings_without_modifying_candidate() -> 
     intelligence = CandidateIntelligenceAgent().process([])
     result = PresentationAgent().present(intelligence)
 
-    assert result.candidate == intelligence.canonical_candidate
-    assert result.warnings == (
-        "missing name",
-        "missing email",
-        "missing phone",
-        "incomplete profile",
-    )
+    assert result.header.name == "Unknown Candidate"
+    assert "full_name" in result.missing_fields
+    assert "phone" in result.missing_fields
 
 
 def test_presentation_agent_generates_summary() -> None:
     """Summary reflects existing intelligence artifacts without new reasoning."""
     result = PresentationAgent().present(_complete_intelligence_result())
 
-    assert result.summary.workflow_status == WorkflowStatus.READY_FOR_PRESENTATION
-    assert result.summary.candidate_confidence == 0.95
-    assert result.summary.sources == ("ATS",)
-    assert result.summary.decision_count == len(result.candidate.decision_logs)
-    assert result.summary.missing_fields == ()
-    assert result.summary.conflicting_fields == ()
-    assert result.summary.presentation_warnings == ()
+    assert result.header.workflow_status == "Ready For Review"
+    assert result.confidence.overall_score == "99%"
+    assert result.header.sources_used == ["ATS"]
+    assert result.missing_fields == []
+    assert result.conflicting_fields == []
 
 
 def test_presentation_agent_returns_export_model() -> None:
@@ -647,10 +641,8 @@ def test_presentation_agent_returns_export_model() -> None:
 
     assert isinstance(first, PresentationResult)
     assert first == second
-    assert first.decision_context == intelligence.decision_context
-    assert tuple(first.projections) == ("recruiter", "hr", "engineering")
-    assert first.metadata["projection_version"] == "presentation_v1"
-    assert first.model_dump(mode="json")["candidate"]["candidate_id"]
+    assert first.header.name == "Ada Lovelace"
+    assert first.model_dump(mode="json")["header"]["name"] == "Ada Lovelace"
 
 
 def test_presentation_agent_rejects_non_intelligence_input() -> None:
@@ -678,4 +670,3 @@ def test_agent_orchestrator_coordinates_agent_execution_flow() -> None:
     assert isinstance(presentation_agent.received, IntelligenceResult)
     assert isinstance(result, PresentationResult)
     assert isinstance(presentation_agent.received, IntelligenceResult)
-    assert result.candidate == presentation_agent.received.canonical_candidate

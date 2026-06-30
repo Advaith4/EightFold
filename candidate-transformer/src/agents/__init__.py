@@ -6,7 +6,6 @@ from src.agents.models import (
     DecisionContext,
     IntelligenceResult,
     PresentationResult,
-    PresentationSummary,
     WorkflowStatus,
 )
 from src.agents.orchestrator import AgentOrchestrator
@@ -21,7 +20,6 @@ __all__ = [
     "IntelligenceResult",
     "PresentationAgent",
     "PresentationResult",
-    "PresentationSummary",
     "SourceConfidencePolicy",
     "WorkflowStatus",
 ]
