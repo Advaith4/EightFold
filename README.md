@@ -122,40 +122,44 @@ flowchart LR
 
     canonical --> presentation
 
-    subgraph presentationStage[Presentation And Output]
-        recruiter[Recruiter View]
-        candidateView[Candidate View]
-        engineering[Engineering View]
-        pipeline[Pipeline Summary]
+    subgraph presentationStage[Current Streamlit Presentation Tabs]
+        candidateTab[Candidate]
         decision[Decision Log]
-        provView[Provenance]
         confView[Confidence]
+        provView[Provenance]
+        recruiter[Recruiter View]
         rawJson[Raw JSON]
         projection[Runtime Projection Layer\nDefault / Custom Output Schema]
         validation[Schema Validation]
         final[Final JSON + Streamlit Dashboard]
     end
 
-    presentation --> recruiter
-    presentation --> candidateView
-    presentation --> engineering
-    presentation --> pipeline
+    presentation --> candidateTab
     presentation --> decision
-    presentation --> provView
     presentation --> confView
+    presentation --> provView
+    presentation --> recruiter
     presentation --> rawJson
     canonical --> projection
-    recruiter --> projection
-    candidateView --> projection
-    engineering --> projection
-    pipeline --> projection
+    candidateTab --> projection
     decision --> projection
-    provView --> projection
     confView --> projection
+    provView --> projection
+    recruiter --> projection
     rawJson --> projection
     projection --> validation
     validation --> final
 ```
+
+Current Streamlit presentation tabs:
+
+- Candidate
+- Decision Log
+- Confidence
+- Provenance
+- Recruiter View
+- Raw JSON
+
 ## Supported Input Sources
 
 - Resume PDF
