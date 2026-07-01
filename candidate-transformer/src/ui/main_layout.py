@@ -149,10 +149,11 @@ def render_tabs(result: PresentationResult, selected_index: int = 0) -> None:
     with tab2:
         render_decision_log_tab(result.decision_log)
     with tab3:
-        render_confidence_tab(presentation)
+        render_confidence_tab(presentation, result, selected_index)
     with tab4:
         render_provenance_tab(presentation)
     with tab5:
         render_recruiter_tab(presentation)
     with tab6:
         render_raw_json_tab(result.selected_candidate)
+

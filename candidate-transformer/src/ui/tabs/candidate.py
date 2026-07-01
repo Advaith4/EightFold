@@ -28,7 +28,7 @@ def render_candidate_tab(presentation: CandidatePresentation) -> None:
             else "Unknown"
         )
         st.metric("Current Organization", current_org)
-        st.metric("Confidence", presentation.confidence.overall_score)
+        st.metric("Profile Confidence", presentation.confidence.overall_score)
 
     st.divider()
 
@@ -132,3 +132,4 @@ def render_candidate_tab(presentation: CandidatePresentation) -> None:
 
                 st.markdown(f"*{edu.duration}*")
                 st.markdown("---")
+

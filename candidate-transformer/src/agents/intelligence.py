@@ -360,35 +360,15 @@ class CandidateIntelligenceAgent:
         skills = self._build_skills(raw_records)
         links = self._build_links(raw_records)
 
-        base_confidence = self._confidence_for_records(raw_records)
-        penalty = 0.0
-        bonus = 0.0
-
-        if not experiences:
-            penalty += 0.15
-        else:
-            bonus += 0.05
-
-        if not education:
-            penalty += 0.15
-        else:
-            bonus += 0.05
-
-        if not skills:
-            penalty += 0.10
-        else:
-            bonus += 0.01
-
-        if not contact_info.preferred_email and not contact_info.preferred_phone:
-            penalty += 0.10
-
-        if links:
-            bonus += 0.01
-
-        final_score = min(0.99, max(0.0, base_confidence.score - penalty + bonus))
-        confidence = Confidence(
-            score=final_score,
-            method="Dynamic Completeness Scoring",
+        confidence = self._build_candidate_confidence(
+            raw_records=raw_records,
+            experiences=experiences,
+            education=education,
+            skills=skills,
+            has_contact=bool(
+                contact_info.preferred_email or contact_info.preferred_phone
+            ),
+            has_links=bool(links),
         )
 
         candidate = CanonicalCandidate(
@@ -776,6 +756,98 @@ class CandidateIntelligenceAgent:
     def _source_priority(self, record: RawCandidateRecord) -> int:
         return self.source_precedence.get(self._source_label(record), 99)
 
+    def _build_candidate_confidence(
+        self,
+        *,
+        raw_records: list[RawCandidateRecord],
+        experiences: list[Experience],
+        education: list[Education],
+        skills: list[Skill],
+        has_contact: bool,
+        has_links: bool,
+    ) -> Confidence:
+        source_scores = [
+            (
+                self._source_label(record),
+                self._confidence_policy.score_for(self._source_label(record)),
+            )
+            for record in raw_records
+        ]
+        counted_sources = tuple(dict.fromkeys(source for source, _ in source_scores))
+        if source_scores:
+            base_source, base_score = max(source_scores, key=lambda item: item[1])
+        else:
+            base_source = "No source"
+            base_score = 0.0
+
+        adjustments: list[tuple[str, float]] = []
+        if not experiences:
+            adjustments.append(("No experience entries found", -0.15))
+        else:
+            adjustments.append(("Experience entries present", 0.05))
+
+        if not education:
+            adjustments.append(("No education entries found", -0.15))
+        else:
+            adjustments.append(("Education entries present", 0.05))
+
+        if not skills:
+            adjustments.append(("No skills found", -0.10))
+        else:
+            adjustments.append(("Skills present", 0.01))
+
+        if not has_contact:
+            adjustments.append(("No preferred email or phone found", -0.10))
+
+        if has_links:
+            adjustments.append(("Profile links present", 0.01))
+
+        raw_score = base_score + sum(value for _, value in adjustments)
+        final_score = min(0.99, max(0.0, raw_score))
+        source_label = ", ".join(counted_sources) if counted_sources else "None"
+        reasons = [
+            f"Sources counted in this candidate: {source_label}.",
+            (
+                f"Base source reliability uses strongest counted source: "
+                f"{self._format_percent(base_score)} from {base_source}."
+            ),
+        ]
+        reasons.extend(
+            f"{label}: {self._format_signed_percent(value)}."
+            for label, value in adjustments
+        )
+        cap_note = " capped at 99%" if raw_score > 0.99 else ""
+        floor_note = " floored at 0%" if raw_score < 0.0 else ""
+        reasons.append(
+            "Final confidence: "
+            f"{self._format_percent(final_score)} = "
+            f"{self._format_percent(base_score)} "
+            f"{self._format_adjustment_formula(adjustments)}"
+            f"{cap_note}{floor_note}."
+        )
+
+        return Confidence(
+            score=final_score,
+            method="Dynamic Completeness Scoring",
+            reasons=reasons,
+        )
+
+    def _format_percent(self, score: float) -> str:
+        return f"{int(score * 100)}%"
+
+    def _format_signed_percent(self, value: float) -> str:
+        sign = "+" if value >= 0 else "-"
+        return f"{sign}{int(abs(value) * 100)}%"
+
+    def _format_adjustment_formula(
+        self, adjustments: list[tuple[str, float]]
+    ) -> str:
+        if not adjustments:
+            return "+ 0% adjustments"
+        return " ".join(
+            self._format_signed_percent(value) for _, value in adjustments
+        )
+
     def _confidence_for_records(self, records: list[RawCandidateRecord]) -> Confidence:
         if not records:
             return Confidence(score=0.0, method=self._confidence_policy.method)
@@ -1029,3 +1101,6 @@ class CandidateIntelligenceAgent:
         if isinstance(value, dict):
             return self._first_string(value, ("name", "skill", "raw_name"))
         return None
+
+
+

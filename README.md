@@ -98,51 +98,55 @@ Streamlit UI / Service API
 
 ### Main Streamlit UI
 
-![Main Streamlit UI](docs/screenshots/ui-overview.png)
+![Main Streamlit UI](candidate-transformer/docs/screenshots/ui-overview.png)
 
 ### Sample Input Uploads
 
-![Sample Input Uploads](docs/screenshots/sample-input.png)
+![Sample Input Uploads](candidate-transformer/docs/screenshots/sample-input.png)
 
 ### Successful Processing
 
-![Successful Processing](docs/screenshots/process-successful.png)
+![Successful Processing](candidate-transformer/docs/screenshots/process-successful.png)
 
 ### Pipeline Overview
 
-![Pipeline Overview](docs/screenshots/pipeline-overview.png)
+![Pipeline Overview](candidate-transformer/docs/screenshots/pipeline-overview.png)
 
 ### Decision Pipeline
 
-![Decision Pipeline](docs/screenshots/decision-pipeline.png)
+![Decision Pipeline](candidate-transformer/docs/screenshots/decision-pipeline.png)
 
 ### Duplicate Detection
 
-![Duplicate Detection](docs/screenshots/duplicate-detection.png)
+![Duplicate Detection](candidate-transformer/docs/screenshots/duplicate-detection.png)
 
 ### Candidate Selection
 
-![Candidate Selection](docs/screenshots/candidate-selection.png)
+![Candidate Selection](candidate-transformer/docs/screenshots/candidate-selection.png)
 
 ### Candidate Profile
 
-![Candidate Profile](docs/screenshots/candidate-profile.png)
+![Candidate Profile](candidate-transformer/docs/screenshots/candidate-profile.png)
 
 ### Confidence View
 
-![Confidence View](docs/screenshots/confidence.png)
+![Confidence View](candidate-transformer/docs/screenshots/confidence.png)
+
+### Confidence Reason Breakdown
+
+![Confidence Reason Breakdown](candidate-transformer/docs/screenshots/confidence-reason.png)
 
 ### Provenance View
 
-![Provenance View](docs/screenshots/provenance.png)
+![Provenance View](candidate-transformer/docs/screenshots/provenance.png)
 
 ### Recruiter View
 
-![Recruiter View](docs/screenshots/recruiter-view.png)
+![Recruiter View](candidate-transformer/docs/screenshots/recruiter-view.png)
 
 ### JSON Output
 
-![JSON Output](docs/screenshots/json-output.png)
+![JSON Output](candidate-transformer/docs/screenshots/json-output.png)
 
 ## Repository Structure
 
@@ -275,4 +279,6 @@ The committed output files were generated from the service pipeline using `sampl
 
 ## Demo Video 
 
-Demo video link: .
+Demo video link: _to be added before final submission_.
+
+

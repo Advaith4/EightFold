@@ -15,7 +15,7 @@ def render_candidate_summary(result: PresentationResult) -> None:
     with col1:
         st.markdown(f"**Name:** {header.name}")
         st.markdown(f"**Workflow Status:** {header.workflow_status}")
-        st.markdown(f"**Overall Confidence:** {header.overall_confidence_score}")
+        st.markdown(f"**Profile Confidence:** {header.overall_confidence_score}")
 
         sources = ", ".join(header.sources_used) if header.sources_used else "None"
         st.markdown(f"**Sources Used:** {sources}")
@@ -29,3 +29,4 @@ def render_candidate_summary(result: PresentationResult) -> None:
         st.markdown(f"**Location:** {location}")
 
     st.divider()
+

@@ -696,6 +696,37 @@ def test_candidate_intelligence_assigns_deterministic_confidence(
     assert result.canonical_candidates[0].confidence.score == pytest.approx(expected)
 
 
+def test_candidate_intelligence_explains_confidence_score_formula() -> None:
+    """Candidate-level confidence includes deterministic score arithmetic."""
+    result = CandidateIntelligenceAgent().process(
+        [
+            raw_record(
+                "ats",
+                source_type=DomainSourceType.ATS,
+                payload={
+                    "email": "ada@example.com",
+                    "experiences": [{"organization": "Analytical Engines"}],
+                    "education": [{"institution": "Dummy U"}],
+                    "skills": ["Python"],
+                },
+            )
+        ]
+    )
+
+    reasons = result.canonical_candidate.confidence.reasons
+
+    assert result.canonical_candidate.confidence.score == pytest.approx(0.99)
+    assert "Sources counted in this candidate: ATS." in reasons
+    assert (
+        "Base source reliability uses strongest counted source: 95% from ATS."
+        in reasons
+    )
+    assert "Experience entries present: +5%." in reasons
+    assert "Education entries present: +5%." in reasons
+    assert "Skills present: +1%." in reasons
+    assert "Final confidence: 99% = 95% +5% +5% +1% capped at 99%." in reasons
+
+
 def test_candidate_intelligence_accepts_replaceable_confidence_policy() -> None:
     """Confidence values are centralized in a replaceable policy object."""
     policy = SourceConfidencePolicy(
@@ -1089,3 +1120,5 @@ def test_agent_orchestrator_coordinates_agent_execution_flow() -> None:
     assert isinstance(presentation_agent.received, IntelligenceResult)
     assert isinstance(result, PresentationResult)
     assert isinstance(presentation_agent.received, IntelligenceResult)
+
+
