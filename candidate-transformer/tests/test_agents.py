@@ -626,6 +626,33 @@ def test_candidate_intelligence_returns_canonical_candidate_per_group() -> None:
     ] == ["Ada Lovelace", "Grace Hopper"]
 
 
+def test_candidate_intelligence_splits_delimited_skill_strings() -> None:
+    """Delimited skill strings become separate deterministic skill values."""
+    result = CandidateIntelligenceAgent().process(
+        [
+            raw_record(
+                "resume",
+                source_type=DomainSourceType.RESUME,
+                payload={
+                    "skills": [
+                        "UDS;HIL Testing;CAN;Wireshark;Postman;JIRA;ISO 26262;Git"
+                    ],
+                },
+            )
+        ]
+    )
+
+    assert [skill.name for skill in result.canonical_candidate.skills] == [
+        "UDS",
+        "HIL Testing",
+        "CAN",
+        "Wireshark",
+        "Postman",
+        "JIRA",
+        "ISO 26262",
+        "Git",
+    ]
+
 def test_candidate_intelligence_maps_single_resume_source() -> None:
     """Resume-only candidates map explicit fields without inference."""
     result = CandidateIntelligenceAgent().process(
@@ -1120,5 +1147,6 @@ def test_agent_orchestrator_coordinates_agent_execution_flow() -> None:
     assert isinstance(presentation_agent.received, IntelligenceResult)
     assert isinstance(result, PresentationResult)
     assert isinstance(presentation_agent.received, IntelligenceResult)
+
 
 

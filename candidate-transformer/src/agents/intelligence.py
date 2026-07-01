@@ -532,7 +532,7 @@ class CandidateIntelligenceAgent:
             skill_names = [
                 name
                 for raw_skill in raw_skills
-                if (name := self._skill_name(raw_skill))
+                for name in self._skill_names(raw_skill)
             ]
             skill_names.extend(self._github_language_names(record))
             for name in skill_names:
@@ -1095,12 +1095,17 @@ class CandidateIntelligenceAgent:
             return [item for item in value if isinstance(item, dict)]
         return []
 
-    def _skill_name(self, value: JsonValue) -> str | None:
+    def _skill_names(self, value: JsonValue) -> list[str]:
         if isinstance(value, str) and value.strip():
-            return value
+            return [
+                item.strip()
+                for item in re.split(r"[;,|\n\r]+", value)
+                if item.strip()
+            ]
         if isinstance(value, dict):
-            return self._first_string(value, ("name", "skill", "raw_name"))
-        return None
+            name = self._first_string(value, ("name", "skill", "raw_name"))
+            return [name] if name is not None else []
+        return []
 
 
 

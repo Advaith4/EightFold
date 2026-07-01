@@ -53,8 +53,11 @@ def render_candidate_tab(presentation: CandidatePresentation) -> None:
 
     st.markdown("### Skills")
     if overview.skills:
-        tags = [f"`{skill.name}`" for skill in overview.skills]
-        st.markdown(" ".join(tags))
+        tags = "".join(
+            f"<span class='skill-chip'>{skill.name}</span>"
+            for skill in overview.skills
+        )
+        st.markdown(tags, unsafe_allow_html=True)
     else:
         st.info("No skills detected.")
 
@@ -132,4 +135,5 @@ def render_candidate_tab(presentation: CandidatePresentation) -> None:
 
                 st.markdown(f"*{edu.duration}*")
                 st.markdown("---")
+
 
