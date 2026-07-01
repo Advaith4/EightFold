@@ -250,12 +250,7 @@ The committed output files were generated from the service pipeline using `sampl
 - Duplicate candidates grouped by deterministic identity signals
 - Missing candidate fields surfaced as presentation warnings
 
-## Assumptions And Limitations
-
-- Duplicate detection is deterministic and rule-based; it does not use AI, embeddings, or fuzzy matching libraries.
-- GitHub extraction uses the GitHub REST API and only maps explicitly returned public data.
-- Resume parsing is deterministic and heuristic; OCR and semantic resume understanding are out of scope.
-- LinkedIn, databases, exports to PDF/DOCX, and production authentication are out of scope.
+## Considerations
 - GitHub API rate limits may apply without a local `GITHUB_TOKEN`.
 
 ## Submission Checklist
