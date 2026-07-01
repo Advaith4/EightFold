@@ -47,32 +47,115 @@ The engine transforms candidate data from resumes, ATS exports, recruiter CSV fi
 
 ## Architecture Overview
 
-```text
-Adapters
-  -> Duplicate Detection
-  -> Canonical Candidate
-  -> Merge
-  -> Confidence
-  -> Projection
-  -> Validation
-  -> Output
+```mermaid
+flowchart LR
+    user([User]) --> app[Streamlit Web Application]
+
+    subgraph ui[Input Surface]
+        resume[Resume Upload]
+        ats[ATS JSON]
+        csv[Recruiter CSV]
+        github[GitHub Profile URL]
+        config[Runtime Config]
+    end
+
+    app --> resume
+    app --> ats
+    app --> csv
+    app --> github
+    app --> config
+
+    resume --> service[Candidate Processing Service]
+    ats --> service
+    csv --> service
+    github --> service
+    config --> service
+
+    service --> orchestrator[Agent Orchestrator]
+
+    orchestrator --> intake[Intake Agent]
+    orchestrator --> intelligence[Candidate Intelligence Agent]
+    orchestrator --> presentation[Presentation Agent]
+
+    subgraph intakeStage[Intake And Source Conversion]
+        detection[Source Detection]
+        parser[Resume Parser]
+        atsAdapter[ATS Adapter]
+        csvAdapter[CSV Adapter]
+        githubAdapter[GitHub Adapter]
+        raw[RawCandidateRecords]
+    end
+
+    intake --> detection
+    detection --> parser
+    detection --> atsAdapter
+    detection --> csvAdapter
+    detection --> githubAdapter
+    parser --> raw
+    atsAdapter --> raw
+    csvAdapter --> raw
+    githubAdapter --> raw
+
+    raw --> intelligence
+
+    subgraph intelligenceStage[Candidate Intelligence]
+        normalize[Data Normalization\nEmail, Phone, Dates, Skills, GitHub Username]
+        duplicate[Duplicate Detection]
+        groups[Candidate Groups]
+        canonicalGen[Canonical Candidate Generation]
+        conflict[Conflict Resolution]
+        provenance[Provenance Tracking]
+        confidence[Confidence Scoring]
+        canonical[Canonical Candidate]
+    end
+
+    intelligence --> normalize
+    normalize --> duplicate
+    duplicate --> groups
+    groups --> canonicalGen
+    canonicalGen --> conflict
+    canonicalGen --> provenance
+    canonicalGen --> confidence
+    conflict --> canonical
+    provenance --> canonical
+    confidence --> canonical
+
+    canonical --> presentation
+
+    subgraph presentationStage[Presentation And Output]
+        recruiter[Recruiter View]
+        candidateView[Candidate View]
+        engineering[Engineering View]
+        pipeline[Pipeline Summary]
+        decision[Decision Log]
+        provView[Provenance]
+        confView[Confidence]
+        rawJson[Raw JSON]
+        projection[Runtime Projection Layer\nDefault / Custom Output Schema]
+        validation[Schema Validation]
+        final[Final JSON + Streamlit Dashboard]
+    end
+
+    presentation --> recruiter
+    presentation --> candidateView
+    presentation --> engineering
+    presentation --> pipeline
+    presentation --> decision
+    presentation --> provView
+    presentation --> confView
+    presentation --> rawJson
+    canonical --> projection
+    recruiter --> projection
+    candidateView --> projection
+    engineering --> projection
+    pipeline --> projection
+    decision --> projection
+    provView --> projection
+    confView --> projection
+    rawJson --> projection
+    projection --> validation
+    validation --> final
 ```
-
-Runtime flow:
-
-```text
-Streamlit UI / Service API
-  -> CandidateProcessingService
-  -> IntakeAgent
-  -> RawCandidateRecord[]
-  -> DuplicateDetectionAgent
-  -> CandidateGroup[]
-  -> CandidateIntelligenceAgent
-  -> CanonicalCandidate[]
-  -> PresentationAgent
-  -> PresentationResult / JSON Output
-```
-
 ## Supported Input Sources
 
 - Resume PDF
@@ -275,5 +358,4 @@ The committed output files were generated from the service pipeline using `sampl
 ## Demo Video 
 
 Demo video link: _to be added before final submission_.
-
 
